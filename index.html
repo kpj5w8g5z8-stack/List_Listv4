@@ -235,7 +235,7 @@ function fmtDate(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{week
 function fmtDateS(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"});}
 function fmtDateXS(d){const dt=new Date(d+"T12:00");return`${dt.getDate()}.${dt.getMonth()+1}`;}
 function ratingColor(v,inv){const val=inv?6-v:v;if(val<=1)return"#ff7070";if(val===2)return"#fb923c";if(val===3)return"#fcd34d";if(val===4)return"#86efac";return"#4ade80";}
-function getLast7(){const a=[];for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(d.toISOString().slice(0,10));}return a;}
+function getLast7(){const a=[];for(let i=0;i<14;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(d.toISOString().slice(0,10));}return a;}
 
 // Data shape per day:
 // { medication, dosage, takenAt,
@@ -246,7 +246,7 @@ function getLast7(){const a=[];for(let i=0;i<7;i++){const d=new Date();d.setDate
 let S = {
   tab:"today", data:load(), selDate:todayStr(),
   checkinHour:null, draft:null, saved:false,
-  showMed:false, medForm:{medication:"",dosage:"",takenAt:""},
+  showMed:false, medForm:{medication:"",dosage:"",takenAt:"",manufacturer:""},
   statsTab:"graph", graphMetrics:["focus","mood","energy"],
   compareMode:false, showImport:false,
 };
@@ -538,7 +538,7 @@ function buildMedCompareData(){
   Object.keys(S.data).forEach(date=>{
     const d=S.data[date];
     if(!d?.medication)return;
-    const key=`${d.medication} ${d.dosage}`.trim();
+    const key=`${d.medication} ${d.dosage}${d.manufacturer?" ("+d.manufacturer+")":""}`.trim();
     if(!medGroups[key])medGroups[key]={days:[],focusVals:[],moodVals:[],energyVals:[],negEvents:0,posEvents:0,totalCheckins:0};
     medGroups[key].days.push(date);
     Object.values(d.checkins||{}).forEach(c=>{
@@ -592,7 +592,7 @@ function buildReport(){
   ];
   allDays.slice(0,7).forEach(date=>{
     const d=S.data[date];
-    lines.push(`\n${fmtDateS(date)}${d?.medication?` – ${d.medication} ${d.dosage}`:""}`);
+    lines.push(`\n${fmtDateS(date)}${d?.medication?` – ${d.medication} ${d.dosage}${d.manufacturer?" ("+d.manufacturer+")":""}`:""}`);
     Object.entries(d?.checkins||{}).sort((a,b)=>+a[0]-+b[0]).forEach(([h,c])=>{
       const syms=METRICS.filter(m=>c.symptoms?.[m.id]).map(m=>`${m.icon}${c.symptoms[m.id]}`).join(" ");
       const evs=(c.events||[]).map(e=>(e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•")+e.label).join(", ");
@@ -739,6 +739,11 @@ function renderMedModal(){
   timeInp.type="time";timeInp.value=f.takenAt;
   timeInp.onchange=e=>S.medForm.takenAt=e.target.value;
 
+  const manufacturerInp=document.createElement("input");
+  manufacturerInp.placeholder="z.B. Hexal, MEDICE, Lilly, Shire …";
+  manufacturerInp.value=f.manufacturer||"";
+  manufacturerInp.oninput=e=>S.medForm.manufacturer=e.target.value;
+
   const sheet=el("div",{class:"sheet",onClick:e=>e.stopPropagation()},
     el("div",{class:"sheet-title"},"💊 Medikament"),
     el("span",{class:"card-label"},"Medikament"),
@@ -747,6 +752,8 @@ function renderMedModal(){
     customInp,
     el("span",{class:"card-label",style:{marginTop:"10px"}},"Dosis (mg)"),
     doseInp,
+    el("span",{class:"card-label",style:{marginTop:"10px"}},"Hersteller (optional)"),
+    manufacturerInp,
     el("span",{class:"card-label",style:{marginTop:"10px"}},"Einnahmezeit"),
     timeInp,
     el("button",{class:"btn primary",style:{marginTop:"16px"},onClick:saveMed},"Speichern"),
@@ -778,8 +785,8 @@ function renderToday(){
 
   const medBtn=el("button",{
     class:"med-btn"+(day.medication?" has-med":""),
-    onClick:()=>{S.medForm={medication:day.medication||"",dosage:day.dosage||"",takenAt:day.takenAt||""};set({showMed:true});}
-  },day.medication?`💊 ${day.medication} ${day.dosage}`:"+ Medikament");
+    onClick:()=>{S.medForm={medication:day.medication||"",dosage:day.dosage||"",takenAt:day.takenAt||"",manufacturer:day.manufacturer||""};set({showMed:true});}
+  },day.medication?`💊 ${day.medication} ${day.dosage}${day.manufacturer?" ("+day.manufacturer+")":""}`:"+ Medikament");
 
   wrap.appendChild(el("div",{class:"topbar"},
     el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}},
@@ -884,7 +891,7 @@ function renderHistory(){
       el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}},
         el("div",{},
           el("div",{style:{fontWeight:"600",fontSize:"15px"}},fmtDateS(date)),
-          d?.medication?el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},`💊 ${d.medication} ${d.dosage}${d.takenAt?" · "+d.takenAt+"h":""}`)
+          d?.medication?el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},`💊 ${d.medication} ${d.dosage}${d.manufacturer?" · "+d.manufacturer:""}${d.takenAt?" · "+d.takenAt+"h":""}`)
           :el("div",{style:{fontSize:"12px",color:"var(--dim)"}})
         ),
         dayAvg?el("div",{style:{textAlign:"center"}},
