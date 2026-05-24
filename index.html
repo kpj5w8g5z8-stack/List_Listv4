@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ADHS Tagebuch">
+<title>ADHS Tagebuch</title>
+<style>
+:root {
+  --bg:#0a0e1a; --surface:#12172a; --card:#161d30; --border:#253050;
+  --accent:#60a5fa; --accentL:#93c5fd;
+  --green:#4ade80; --red:#ff7070; --yellow:#fcd34d; --orange:#fdba74;
+  --purple:#c084fc; --pink:#f472b6;
+  --text:#f4f7ff; --muted:#94a8c8; --dim:#1e2840;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Display','Helvetica Neue',sans-serif;
+  min-height:100vh;max-width:430px;margin:0 auto;padding-bottom:calc(80px + env(safe-area-inset-bottom));font-size:16px;}
+
+/* ── Topbar */
+.topbar{padding:52px 20px 12px;position:sticky;top:0;z-index:20;
+  background:linear-gradient(180deg,var(--bg) 70%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);}
+.topbar h1{font-size:28px;font-weight:700;}
+.sub{font-size:13px;color:var(--muted);margin-top:3px;}
+
+/* ── Layout */
+.section{padding:0 16px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px;}
+.card-label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+
+/* ── Buttons */
+.btn{width:100%;border:none;border-radius:14px;padding:15px;font-size:16px;font-weight:700;
+  color:#fff;cursor:pointer;font-family:inherit;}
+.btn.primary{background:var(--accent);}
+.btn.green{background:var(--green);color:#0a0e1a;}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);padding:13px;margin-top:8px;}
+.btn.sm{padding:10px 14px;font-size:14px;border-radius:10px;width:auto;}
+.btn.sm.active{background:rgba(96,165,250,.2);border:1px solid var(--accent);color:var(--accentL);}
+.btn.sm.ghost-sm{background:transparent;border:1px solid var(--border);color:var(--muted);}
+.btn:disabled{opacity:.4;cursor:default;}
+
+/* ── Inputs */
+input,textarea,select{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--border);
+  border-radius:12px;padding:13px 15px;color:var(--text);font-size:16px;font-family:inherit;outline:none;}
+select{background:#161d30;appearance:none;-webkit-appearance:none;}
+textarea{min-height:70px;resize:vertical;line-height:1.6;}
+input[type=time],input[type=date]{padding:10px 14px;font-size:15px;}
+
+/* ── Scale buttons */
+.scale-row{display:flex;gap:6px;}
+.scale-btn{flex:1;padding:12px 0;border-radius:10px;cursor:pointer;font-size:17px;font-weight:700;
+  border:1.5px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);font-family:inherit;}
+
+/* ── Date strip */
+.date-strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;}
+.date-strip::-webkit-scrollbar{display:none;}
+.date-pill{display:flex;flex-direction:column;align-items:center;padding:8px 12px;border-radius:12px;
+  cursor:pointer;border:1.5px solid var(--border);background:transparent;min-width:52px;font-family:inherit;}
+.date-pill.active{background:rgba(96,165,250,.18);border-color:var(--accent);}
+.date-pill.has-data{border-color:var(--green);}
+.date-pill-dow{font-size:11px;color:var(--muted);}
+.date-pill-day{font-size:18px;font-weight:700;}
+.date-pill-dot{width:5px;height:5px;border-radius:50%;background:var(--green);margin-top:2px;}
+
+/* ── Medication button */
+.med-btn{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;
+  padding:10px 16px;cursor:pointer;color:var(--muted);font-size:14px;font-family:inherit;}
+.med-btn.has-med{background:rgba(96,165,250,.15);border-color:var(--accent);color:var(--accentL);}
+
+/* ── Timeline */
+.timeline-scroll{overflow-x:auto;padding-bottom:4px;}
+.timeline-row{display:flex;gap:6px;min-width:max-content;padding-bottom:4px;}
+.hour-dot{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;min-width:36px;}
+.hour-circle{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:700;border:1.5px dashed var(--dim);background:transparent;color:var(--muted);position:relative;}
+.hour-label{font-size:9px;color:var(--muted);}
+.med-badge{position:absolute;top:-5px;right:-4px;font-size:10px;}
+
+/* ── Entry list */
+.entry-row{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;}
+.entry-row:last-child{border-bottom:none;}
+.entry-time{font-size:14px;color:var(--muted);min-width:40px;padding-top:2px;}
+.entry-tags{display:flex;flex-wrap:wrap;gap:4px;flex:1;}
+.etag{font-size:12px;border-radius:6px;padding:3px 8px;}
+.entry-note{font-size:13px;color:var(--muted);margin-top:3px;}
+
+/* ── Event chips */
+.event-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:20px;
+  font-size:13px;cursor:pointer;border:1.5px solid transparent;font-family:inherit;background:rgba(255,255,255,.04);
+  border-color:var(--border);color:var(--muted);}
+.event-chip.pos{background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.4);color:var(--green);}
+.event-chip.neg{background:rgba(255,112,112,.1);border-color:rgba(255,112,112,.4);color:var(--red);}
+.event-chip.caff{background:rgba(96,165,250,.1);border-color:rgba(96,165,250,.4);color:var(--accentL);}
+.event-chip.food{background:rgba(253,186,116,.1);border-color:rgba(253,186,116,.4);color:var(--orange);}
+.event-chip.med{background:rgba(192,132,252,.1);border-color:rgba(192,132,252,.4);color:var(--purple);}
+.chip-del{cursor:pointer;opacity:.6;margin-left:3px;font-size:15px;}
+.chips-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+
+/* ── Preset buttons */
+.preset-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+.preset-btn{padding:7px 13px;border-radius:20px;cursor:pointer;font-size:13px;font-family:inherit;
+  border:1.5px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);}
+
+/* ── SVG Graph */
+.graph-wrap{overflow-x:auto;padding-bottom:4px;}
+.graph-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);}
+.legend-dot{width:10px;height:10px;border-radius:50%;}
+.legend-line{width:18px;height:3px;border-radius:2px;}
+
+/* ── Stat tabs */
+.stat-tabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px;}
+.stat-tabs::-webkit-scrollbar{display:none;}
+.stat-tab{padding:8px 16px;border-radius:20px;cursor:pointer;font-size:13px;font-weight:600;
+  white-space:nowrap;border:1.5px solid var(--border);background:transparent;color:var(--muted);font-family:inherit;}
+.stat-tab.active{background:rgba(96,165,250,.18);border-color:var(--accent);color:var(--accentL);}
+
+/* ── Insight cards */
+.insight{border-radius:16px;padding:16px;margin-bottom:10px;border:1px solid;}
+.insight.pos{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.3);}
+.insight.warn{background:rgba(252,211,77,.08);border-color:rgba(252,211,77,.3);}
+.insight.info{background:rgba(96,165,250,.08);border-color:rgba(96,165,250,.3);}
+.insight-icon{font-size:20px;margin-bottom:5px;}
+.insight-title{font-size:15px;font-weight:700;margin-bottom:4px;}
+.insight-title.pos{color:var(--green);}
+.insight-title.warn{color:var(--yellow);}
+.insight-title.info{color:var(--accentL);}
+.insight-text{font-size:13px;color:var(--muted);line-height:1.6;}
+
+/* ── Stat bar */
+.sbar-wrap{height:5px;background:var(--dim);border-radius:4px;overflow:hidden;margin-top:4px;}
+.sbar-fill{height:100%;border-radius:4px;}
+
+/* ── Stat mini card */
+.mini-stat{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px 8px;text-align:center;}
+.mini-stat-num{font-size:26px;font-weight:800;}
+.mini-stat-lbl{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.06em;}
+
+/* ── Best hour */
+.best-card{background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.3);border-radius:16px;padding:16px;margin-bottom:10px;}
+
+/* ── Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:200;display:flex;align-items:flex-end;}
+.sheet{background:var(--surface);border-radius:20px 20px 0 0;width:100%;max-width:430px;margin:0 auto;
+  padding:24px 20px calc(40px + env(safe-area-inset-bottom));border:1px solid var(--border);}
+.sheet-title{font-size:20px;font-weight:700;margin-bottom:18px;}
+
+/* ── Nav */
+nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;
+  background:rgba(10,14,26,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--border);display:flex;justify-content:space-around;
+  padding:10px 0 calc(28px + env(safe-area-inset-bottom));z-index:50;}
+.nav-btn{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border:none;
+  background:none;color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  padding:4px 10px;font-family:inherit;}
+.nav-btn.active{color:var(--accentL);}
+.nav-icon{font-size:26px;}
+
+/* ── Empty */
+.empty{text-align:center;padding:60px 0;color:var(--muted);}
+.empty-icon{font-size:48px;margin-bottom:12px;}
+
+/* ── Toast */
+.toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--green);
+  color:#0a0e1a;padding:10px 20px;border-radius:20px;font-size:14px;font-weight:700;z-index:300;
+  animation:fadeInOut 2s forwards;}
+@keyframes fadeInOut{
+  0%{opacity:0;transform:translateX(-50%) translateY(-8px);}
+  15%{opacity:1;transform:translateX(-50%) translateY(0);}
+  75%{opacity:1;}100%{opacity:0;}
+}
+
+/* ── Backup */
+.backup-card{background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.2);border-radius:16px;padding:16px;margin-bottom:10px;}
+.backup-row{display:flex;gap:8px;margin-bottom:8px;}
+.bup-btn{flex:1;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;
+  padding:13px 8px;cursor:pointer;font-family:inherit;color:var(--text);font-size:13px;font-weight:600;
+  display:flex;flex-direction:column;align-items:center;gap:5px;}
+.bup-icon{font-size:24px;}
+.import-area{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px;
+  padding:12px;color:var(--text);font-size:13px;font-family:'Courier New',monospace;outline:none;
+  min-height:80px;resize:vertical;margin-top:8px;line-height:1.5;}
+.report-box{font-family:'Courier New',monospace;font-size:12px;line-height:1.8;color:var(--muted);
+  white-space:pre-wrap;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px;}
+
+/* ── Seg control (med compare) */
+.seg{display:flex;background:var(--dim);border-radius:12px;padding:3px;gap:3px;margin-bottom:12px;}
+.seg-btn{flex:1;padding:8px;border-radius:9px;border:none;cursor:pointer;font-family:inherit;
+  font-size:13px;font-weight:600;color:var(--muted);background:transparent;}
+.seg-btn.active{background:var(--card);color:var(--text);}
+
+/* ── Checkin category label */
+.cat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px;display:block;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const SK = "adhs_v4";
+const HOURS = Array.from({length:19},(_,i)=>i+5); // 5–23
+
+const MEDS_PRESET = ["Methylphenidat","Elvanse","Ritalin","Concerta","Medikinet","Strattera","Intuniv"];
+
+const METRICS = [
+  {id:"focus",   label:"Fokus",        icon:"🎯", color:"#60a5fa", inv:false},
+  {id:"mood",    label:"Stimmung",     icon:"😊", color:"#4ade80", inv:false},
+  {id:"energy",  label:"Energie",      icon:"🔋", color:"#fcd34d", inv:false},
+  {id:"unrest",  label:"Innere Unruhe",icon:"⚡", color:"#fb923c", inv:true},
+  {id:"impulse", label:"Impulsivität", icon:"💥", color:"#f472b6", inv:true},
+  {id:"hunger",  label:"Hunger",       icon:"🍽️", color:"#a78bfa", inv:false},
+];
+
+const SCALE_LABELS = ["","Sehr wenig","Wenig","Mittel","Gut","Sehr stark"];
+
+// Event presets – type: pos/neg/caff/food
+const EV_POS = ["Sehr fokussiert","Im Flow","Sehr motiviert","Entspannt","Gute Laune","Emotional stabil","Organisiert","Sozial präsent","Aufgaben erledigt","Kreativ"];
+const EV_NEG = ["Reizbar","Traurig","Ängstlich","Rebound","Crash","Überwältigt","Aggressiv","Wirkung weg","Herzrasen","Kopfschmerzen","Übelkeit","Schwindel","Mund trocken","Schlafprobleme"];
+const EV_CAFF= ["Kaffee","Matcha","Grüntee","Schwarztee","Energy Drink","Cola"];
+const EV_FOOD= ["Frühstück","Mittagessen","Abendessen","Snack","Süßes","Obst","Proteinreich","Kohlenhydratreich"];
+
+// Colors per event type
+const EV_COLORS = {pos:"var(--green)",neg:"var(--red)",caff:"var(--accentL)",food:"var(--orange)",med:"var(--purple)"};
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function load(){try{return JSON.parse(localStorage.getItem(SK)||"{}");}catch{return {};}}
+function persist(d){try{localStorage.setItem(SK,JSON.stringify(d));}catch{}}
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function nowHour(){return new Date().getHours();}
+function fmtDate(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});}
+function fmtDateS(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"});}
+function fmtDateXS(d){const dt=new Date(d+"T12:00");return`${dt.getDate()}.${dt.getMonth()+1}`;}
+function ratingColor(v,inv){const val=inv?6-v:v;if(val<=1)return"#ff7070";if(val===2)return"#fb923c";if(val===3)return"#fcd34d";if(val===4)return"#86efac";return"#4ade80";}
+function getLast7(){const a=[];for(let i=0;i<7;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(d.toISOString().slice(0,10));}return a;}
+
+// Data shape per day:
+// { medication, dosage, takenAt,
+//   checkins: { [hour]: { symptoms:{focus,mood,energy,unrest,impulse,hunger}, events:[{type,label,time?}], note } }
+// }
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let S = {
+  tab:"today", data:load(), selDate:todayStr(),
+  checkinHour:null, draft:null, saved:false,
+  showMed:false, medForm:{medication:"",dosage:"",takenAt:""},
+  statsTab:"graph", graphMetrics:["focus","mood","energy"],
+  compareMode:false, showImport:false,
+};
+function set(u){Object.assign(S,u);render();}
+
+// ─── DATA ACTIONS ─────────────────────────────────────────────────────────────
+function openCheckin(hour){
+  const ex=S.data[S.selDate]?.checkins?.[hour]||{symptoms:{},events:[],note:""};
+  set({checkinHour:hour,draft:{symptoms:{...ex.symptoms},events:[...(ex.events||[])],note:ex.note||""}});
+}
+function saveCheckin(){
+  const d=S.data;
+  if(!d[S.selDate])d[S.selDate]={checkins:{}};
+  if(!d[S.selDate].checkins)d[S.selDate].checkins={};
+  d[S.selDate].checkins[S.checkinHour]={...S.draft};
+  S.data=d; persist(d);
+  set({saved:true});
+  setTimeout(()=>set({saved:false,checkinHour:null,draft:null}),1200);
+}
+function saveMed(){
+  const d=S.data;
+  if(!d[S.selDate])d[S.selDate]={checkins:{}};
+  Object.assign(d[S.selDate],S.medForm);
+  S.data=d; persist(d); set({showMed:false});
+}
+function deleteCheckin(hour){
+  const d=S.data;
+  if(d[S.selDate]?.checkins?.[hour])delete d[S.selDate].checkins[hour];
+  S.data=d; persist(d); set({checkinHour:null,draft:null});
+}
+function addEvent(type,label){
+  if(!label.trim())return;
+  S.draft={...S.draft,events:[...(S.draft.events||[]),{type,label:label.trim()}]};
+  render();
+}
+function removeEvent(i){
+  S.draft={...S.draft,events:S.draft.events.filter((_,j)=>j!==i)};
+  render();
+}
+function setSym(id,v){S.draft={...S.draft,symptoms:{...S.draft.symptoms,[id]:v}};render();}
+
+// ─── STATS HELPERS ────────────────────────────────────────────────────────────
+function allCheckins(){return Object.keys(S.data).flatMap(d=>Object.values(S.data[d]?.checkins||{}));}
+function avgStat(id){const v=allCheckins().map(c=>c.symptoms?.[id]).filter(Boolean);return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"–";}
+
+// Build timeline data for graph: array of {hour, [metricId]:value, events:[]}
+function buildDayTimeline(date){
+  const day=S.data[date]||{};
+  return HOURS.map(h=>{
+    const c=day.checkins?.[h];
+    const pt={hour:h};
+    METRICS.forEach(m=>{if(c?.symptoms?.[m.id])pt[m.id]=c.symptoms[m.id];});
+    pt.events=c?.events||[];
+    pt.hasMed=day.takenAt&&parseInt(day.takenAt)===h;
+    return pt;
+  });
+}
+
+// Build multi-day data for trend graph
+function buildTrendData(metricId,days=14){
+  const allDays=Object.keys(S.data).sort().slice(-days);
+  return allDays.map(date=>{
+    const checks=Object.values(S.data[date]?.checkins||{});
+    const vals=checks.map(c=>c.symptoms?.[metricId]).filter(Boolean);
+    return{date,avg:vals.length?(vals.reduce((a,b)=>a+b,0)/vals.length):null};
+  });
+}
+
+// Hourly average across all days
+function hourlyAvg(metricId){
+  const byH={};
+  Object.keys(S.data).forEach(date=>{
+    Object.entries(S.data[date]?.checkins||{}).forEach(([h,c])=>{
+      if(c.symptoms?.[metricId]){if(!byH[h])byH[h]=[];byH[h].push(c.symptoms[metricId]);}
+    });
+  });
+  return HOURS.map(h=>({hour:h,avg:byH[h]?(byH[h].reduce((a,b)=>a+b,0)/byH[h].length):null}));
+}
+
+function getBestHour(){
+  const ha=hourlyAvg("focus").filter(h=>h.avg);
+  return ha.length?ha.reduce((b,h)=>h.avg>b.avg?h:b,ha[0]):null;
+}
+
+// Get all event labels by type across all data
+function eventCounts(){
+  const counts={};
+  allCheckins().forEach(c=>(c.events||[]).forEach(e=>{
+    const k=e.type+":"+e.label;
+    counts[k]=(counts[k]||0)+1;
+  }));
+  return counts;
+}
+
+// Insights
+function generateInsights(){
+  const ins=[];
+  const checks=allCheckins();
+  if(checks.length<4)return[];
+  const best=getBestHour();
+  if(best)ins.push({type:"pos",icon:"🕐",title:`Beste Wirkungszeit: ~${best.hour}:00 Uhr`,
+    text:`Dein Fokus-Durchschnitt ist um ${best.hour}:00 am höchsten (${best.avg.toFixed(1)}/5). Das ist dein optimales Wirkungsfenster.`});
+
+  // Rebound check
+  const reboundC=checks.filter(c=>(c.events||[]).some(e=>e.type==="neg"&&(e.label.includes("Rebound")||e.label.includes("Wirkung weg")))).length;
+  if(reboundC/checks.length>0.2)ins.push({type:"warn",icon:"📉",title:"Häufiger Rebound erkannt",
+    text:`Bei ${Math.round(reboundC/checks.length*100)}% der Einträge treten Rebound-Symptome auf. Mögliche Lösungen: Retardpräparat, spätere Einnahme, zweite Dosis mittags – mit deinem Arzt besprechen.`});
+
+  // Koffein-Einfluss
+  let wCaff=[],woCaff=[];
+  Object.keys(S.data).forEach(date=>{
+    const cks=Object.entries(S.data[date]?.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
+    cks.forEach(([,c],i)=>{
+      const hasCaff=cks.slice(Math.max(0,i-2),i).some(([,p])=>(p.events||[]).some(e=>e.type==="caff"));
+      if(c.symptoms?.focus){hasCaff?wCaff.push(c.symptoms.focus):woCaff.push(c.symptoms.focus);}
+    });
+  });
+  if(wCaff.length>2&&woCaff.length>2){
+    const aw=(wCaff.reduce((a,b)=>a+b,0)/wCaff.length);
+    const awo=(woCaff.reduce((a,b)=>a+b,0)/woCaff.length);
+    const diff=aw-awo;
+    if(Math.abs(diff)>0.4)ins.push({type:diff>0?"pos":"warn",icon:"☕",
+      title:diff>0?"Koffein verbessert deinen Fokus":"Koffein könnte stören",
+      text:diff>0?`Mit Koffein ist dein Fokus im Schnitt ${diff.toFixed(1)} Punkte höher.`
+        :`Nach Koffein ist dein Fokus im Schnitt ${Math.abs(diff).toFixed(1)} Punkte niedriger. Koffein könnte mit dem Medikament interferieren.`});
+  }
+
+  // Fokus-Trend
+  const trend=buildTrendData("focus",14).filter(t=>t.avg);
+  if(trend.length>=5){
+    const f3=trend.slice(0,3).reduce((a,b)=>a+b.avg,0)/3;
+    const l3=trend.slice(-3).reduce((a,b)=>a+b.avg,0)/3;
+    const diff=l3-f3;
+    if(Math.abs(diff)>0.3)ins.push({type:diff>0?"pos":"warn",icon:diff>0?"📈":"📊",
+      title:diff>0?"Fokus verbessert sich":"Fokus nimmt ab",
+      text:diff>0?`Dein Fokus hat sich um Ø +${diff.toFixed(1)} verbessert.`
+        :`Dein Fokus ist um Ø ${diff.toFixed(1)} gesunken. Mögliche Gründe: Toleranzentwicklung oder Dosisanpassung nötig.`});
+  }
+
+  // Med-Einnahmezeit vs. Wirkungspeak
+  const medTimes=Object.keys(S.data).map(d=>S.data[d]?.takenAt).filter(Boolean);
+  const avgMedH=medTimes.length?Math.round(medTimes.reduce((s,t)=>s+parseInt(t),0)/medTimes.length):null;
+  if(avgMedH&&best&&(best.hour-avgMedH)>3)ins.push({type:"info",icon:"⏰",
+    title:"Einnahmezeit überdenken",
+    text:`Einnahme Ø um ${avgMedH}:00, beste Wirkung um ${best.hour}:00 (+${best.hour-avgMedH}h). Eventuell könnte eine spätere Einnahme helfen – mit Arzt besprechen.`});
+
+  return ins;
+}
+
+// ─── SVG GRAPH ────────────────────────────────────────────────────────────────
+function buildDayGraph(date,selectedMetrics){
+  const W=360,H=180,PAD={t:10,r:10,b:30,l:28};
+  const gW=W-PAD.l-PAD.r, gH=H-PAD.t-PAD.b;
+  const day=S.data[date]||{};
+  const pts=buildDayTimeline(date);
+
+  // Map hour → x
+  const hMin=5,hMax=23;
+  function xOf(h){return PAD.l+(h-hMin)/(hMax-hMin)*gW;}
+  function yOf(v){return PAD.t+gH-(v-1)/4*gH;} // v: 1–5
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:320px;overflow:visible;">`;
+
+  // Grid lines Y
+  for(let v=1;v<=5;v++){
+    const y=yOf(v);
+    svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/>`;
+    svg+=`<text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;
+  }
+
+  // Grid lines X (every 2h)
+  for(let h=6;h<=22;h+=2){
+    const x=xOf(h);
+    svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#1e2840" stroke-width="1"/>`;
+    svg+=`<text x="${x}" y="${H-4}" text-anchor="middle" font-size="9" fill="#5a6890">${h}h</text>`;
+  }
+
+  // Medication line
+  if(day.takenAt){
+    const mh=parseFloat(day.takenAt.replace(":","."));
+    const x=xOf(mh);
+    svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#c084fc" stroke-width="2" stroke-dasharray="4,3"/>`;
+    svg+=`<text x="${x+3}" y="${PAD.t+10}" font-size="9" fill="#c084fc">💊 ${day.takenAt}</text>`;
+  }
+
+  // Metric lines
+  selectedMetrics.forEach(mid=>{
+    const m=METRICS.find(x=>x.id===mid);
+    if(!m)return;
+    // collect data points with hours that have data
+    const dp=pts.filter(p=>p[mid]!=null).map(p=>({x:xOf(p.hour),y:yOf(p[mid]),v:p[mid],h:p.hour}));
+    if(dp.length<1)return;
+    // draw line
+    if(dp.length>1){
+      let d=`M${dp[0].x},${dp[0].y}`;
+      for(let i=1;i<dp.length;i++){
+        // smooth curve
+        const mx=(dp[i-1].x+dp[i].x)/2;
+        d+=` C${mx},${dp[i-1].y} ${mx},${dp[i].y} ${dp[i].x},${dp[i].y}`;
+      }
+      svg+=`<path d="${d}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
+    }
+    // dots
+    dp.forEach(pt=>{
+      svg+=`<circle cx="${pt.x}" cy="${pt.y}" r="4" fill="${m.color}" stroke="${S.bg||"#0a0e1a"}" stroke-width="1.5"/>`;
+    });
+  });
+
+  // Events (caffeine, food, pos, neg) as icons on x-axis area
+  const evByHour={};
+  pts.forEach(p=>{if(p.events.length)evByHour[p.hour]=p.events;});
+  Object.entries(evByHour).forEach(([h,evs])=>{
+    const x=xOf(+h);
+    const icons=evs.slice(0,3).map(e=>e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•");
+    icons.forEach((ic,i)=>{
+      svg+=`<text x="${x+(i-icons.length/2+0.5)*12}" y="${PAD.t+gH+22}" text-anchor="middle" font-size="11">${ic}</text>`;
+    });
+  });
+
+  svg+="</svg>";
+  return svg;
+}
+
+// Multi-day trend graph
+function buildTrendGraph(metricId,days=14){
+  const W=360,H=130,PAD={t:8,r:10,b:24,l:28};
+  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
+  const data=buildTrendData(metricId,days).filter((t,i,a)=>a.length<=14);
+  const m=METRICS.find(x=>x.id===metricId);
+  if(!data.length||!m)return"";
+
+  function xOf(i){return PAD.l+(i/(data.length-1||1))*gW;}
+  function yOf(v){return PAD.t+gH-((v-1)/4)*gH;}
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  // Y grid
+  for(let v=1;v<=5;v+=2){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
+
+  const valid=data.map((d,i)=>({...d,i})).filter(d=>d.avg!=null);
+  if(valid.length>1){
+    let path=`M${xOf(valid[0].i)},${yOf(valid[0].avg)}`;
+    for(let k=1;k<valid.length;k++){
+      const mx=(xOf(valid[k-1].i)+xOf(valid[k].i))/2;
+      path+=` C${mx},${yOf(valid[k-1].avg)} ${mx},${yOf(valid[k].avg)} ${xOf(valid[k].i)},${yOf(valid[k].avg)}`;
+    }
+    // fill area
+    const fillPath=path+` L${xOf(valid[valid.length-1].i)},${PAD.t+gH} L${xOf(valid[0].i)},${PAD.t+gH} Z`;
+    svg+=`<path d="${fillPath}" fill="${m.color}" opacity="0.12"/>`;
+    svg+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
+  }
+  valid.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)}" r="3.5" fill="${m.color}"/>`;});
+
+  // X labels (every other)
+  data.forEach((d,i)=>{if(i%2===0||i===data.length-1)svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#5a6890">${fmtDateXS(d.date)}</text>`;});
+
+  svg+="</svg>";
+  return svg;
+}
+
+// Hourly avg graph (across all days)
+function buildHourlyGraph(metricId){
+  const W=360,H=130,PAD={t:8,r:10,b:24,l:28};
+  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
+  const data=hourlyAvg(metricId);
+  const m=METRICS.find(x=>x.id===metricId);
+  if(!m)return"";
+
+  function xOf(i){return PAD.l+(i/(data.length-1))*gW;}
+  function yOf(v){return PAD.t+gH-((v-1)/4)*gH;}
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  for(let v=1;v<=5;v+=2){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
+
+  const valid=data.map((d,i)=>({...d,i})).filter(d=>d.avg!=null);
+  if(valid.length>1){
+    let path=`M${xOf(valid[0].i)},${yOf(valid[0].avg)}`;
+    for(let k=1;k<valid.length;k++){const mx=(xOf(valid[k-1].i)+xOf(valid[k].i))/2;path+=` C${mx},${yOf(valid[k-1].avg)} ${mx},${yOf(valid[k].avg)} ${xOf(valid[k].i)},${yOf(valid[k].avg)}`;}
+    svg+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
+  }
+  valid.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)}" r="3.5" fill="${m.color}"/>`;});
+  data.forEach((d,i)=>{if(d.hour%2===0)svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#5a6890">${d.hour}h</text>`;});
+  svg+="</svg>";
+  return svg;
+}
+
+// Medication comparison
+function buildMedCompareData(){
+  const medGroups={};
+  Object.keys(S.data).forEach(date=>{
+    const d=S.data[date];
+    if(!d?.medication)return;
+    const key=`${d.medication} ${d.dosage}`.trim();
+    if(!medGroups[key])medGroups[key]={days:[],focusVals:[],moodVals:[],energyVals:[],negEvents:0,posEvents:0,totalCheckins:0};
+    medGroups[key].days.push(date);
+    Object.values(d.checkins||{}).forEach(c=>{
+      medGroups[key].totalCheckins++;
+      if(c.symptoms?.focus)medGroups[key].focusVals.push(c.symptoms.focus);
+      if(c.symptoms?.mood)medGroups[key].moodVals.push(c.symptoms.mood);
+      if(c.symptoms?.energy)medGroups[key].energyVals.push(c.symptoms.energy);
+      (c.events||[]).forEach(e=>{
+        if(e.type==="neg")medGroups[key].negEvents++;
+        if(e.type==="pos")medGroups[key].posEvents++;
+      });
+    });
+  });
+  return Object.entries(medGroups).map(([name,g])=>({
+    name,days:g.days.length,
+    avgFocus:g.focusVals.length?(g.focusVals.reduce((a,b)=>a+b,0)/g.focusVals.length).toFixed(1):"–",
+    avgMood: g.moodVals.length?(g.moodVals.reduce((a,b)=>a+b,0)/g.moodVals.length).toFixed(1):"–",
+    avgEnergy:g.energyVals.length?(g.energyVals.reduce((a,b)=>a+b,0)/g.energyVals.length).toFixed(1):"–",
+    negRate:(g.negEvents/Math.max(g.totalCheckins,1)).toFixed(2),
+    posRate:(g.posEvents/Math.max(g.totalCheckins,1)).toFixed(2),
+  }));
+}
+
+// ─── DOM HELPERS ─────────────────────────────────────────────────────────────
+function el(tag,attrs,...kids){
+  const e=document.createElement(tag);
+  if(attrs)Object.entries(attrs).forEach(([k,v])=>{
+    if(k==="class")e.className=v;
+    else if(k==="style"&&typeof v==="object")Object.assign(e.style,v);
+    else if(k.startsWith("on"))e.addEventListener(k.slice(2).toLowerCase(),v);
+    else if(k==="html")e.innerHTML=v;
+    else e.setAttribute(k,v);
+  });
+  kids.flat().forEach(c=>{if(c==null)return;e.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(c):c);});
+  return e;
+}
+function svgEl(html){const d=el("div",{html});return d;}
+function showToast(msg){const t=el("div",{class:"toast"},msg);document.body.appendChild(t);setTimeout(()=>t.remove(),2100);}
+
+// ─── BACKUP ───────────────────────────────────────────────────────────────────
+function buildReport(){
+  const allDays=Object.keys(S.data).sort().reverse();
+  const checks=allCheckins();
+  const best=getBestHour();
+  const lines=[
+    `ADHS Tagesverlauf-Protokoll – ${new Date().toLocaleDateString("de-DE")}`,
+    `Erfasste Tage: ${allDays.length} | Check-ins: ${checks.length}`,
+    best?`Beste Wirkungszeit: ~${best.hour}:00 Uhr (Ø Fokus ${best.avg.toFixed(1)}/5)`:"",
+    `Ø Fokus: ${avgStat("focus")}/5  Ø Stimmung: ${avgStat("mood")}/5  Ø Energie: ${avgStat("energy")}/5`,
+    "","Letzte Einträge:"
+  ];
+  allDays.slice(0,7).forEach(date=>{
+    const d=S.data[date];
+    lines.push(`\n${fmtDateS(date)}${d?.medication?` – ${d.medication} ${d.dosage}`:""}`);
+    Object.entries(d?.checkins||{}).sort((a,b)=>+a[0]-+b[0]).forEach(([h,c])=>{
+      const syms=METRICS.filter(m=>c.symptoms?.[m.id]).map(m=>`${m.icon}${c.symptoms[m.id]}`).join(" ");
+      const evs=(c.events||[]).map(e=>(e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•")+e.label).join(", ");
+      lines.push(`  ${h}:00 ${syms}${evs?" | "+evs:""}${c.note?" – "+c.note:""}`);
+    });
+  });
+  return lines.filter(l=>l!==undefined).join("\n");
+}
+function copyReport(){const t=buildReport();if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>showToast("✓ Bericht kopiert!")).catch(()=>prompt("Kopieren:",t));else prompt("Kopieren:",t);}
+function exportMail(){const b=encodeURIComponent(buildReport());const s=encodeURIComponent(`ADHS Protokoll – ${new Date().toLocaleDateString("de-DE")}`);window.location.href=`mailto:?subject=${s}&body=${b}`;}
+function exportJSON(){const j=JSON.stringify(S.data,null,2);const b=new Blob([j],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=`adhs-backup-${todayStr()}.json`;a.click();URL.revokeObjectURL(u);}
+function importJSON(str){try{const p=JSON.parse(str);if(typeof p!=="object")throw 0;S.data=p;persist(p);set({showImport:false});showToast("✓ Daten wiederhergestellt!");}catch{alert("Ungültiges Backup-Format.");}}
+
+// ─── VIEWS ────────────────────────────────────────────────────────────────────
+
+// ── CHECKIN VIEW
+function renderCheckin(){
+  const hour=S.checkinHour, draft=S.draft;
+  const wrap=el("div",{});
+
+  if(S.saved){
+    wrap.appendChild(el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"60vh",textAlign:"center",padding:"24px"}},
+      el("div",{style:{fontSize:"56px",marginBottom:"12px"}},"✅"),
+      el("div",{style:{fontSize:"20px",fontWeight:"700"}},"Gespeichert!"),
+    ));
+    return wrap;
+  }
+
+  // Topbar
+  wrap.appendChild(el("div",{class:"topbar"},
+    el("div",{style:{display:"flex",alignItems:"center",gap:"10px"}},
+      el("button",{class:"btn ghost sm",style:{width:"auto"},onClick:()=>set({checkinHour:null,draft:null})},"← Zurück"),
+      el("h1",{style:{fontSize:"22px"}},`${hour}:00 Uhr`)
+    ),
+    el("div",{class:"sub"},fmtDate(S.selDate))
+  ));
+
+  const sec=el("div",{class:"section"});
+
+  // ── Symptom Skalen
+  sec.appendChild(el("div",{class:"card"},
+    el("span",{class:"card-label"},"Wie geht es dir?"),
+    ...METRICS.map(m=>{
+      const val=draft.symptoms[m.id]||0;
+      const col=val?ratingColor(val,m.inv):"var(--muted)";
+      const row=el("div",{style:{marginBottom:"18px"}},
+        el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}},
+          el("span",{style:{fontSize:"15px",fontWeight:"600"}},`${m.icon} ${m.label}`),
+          val?el("span",{style:{fontSize:"13px",color:col,fontWeight:"700"}},SCALE_LABELS[val]):null
+        ),
+        el("div",{class:"scale-row"},
+          ...[1,2,3,4,5].map(v=>{
+            const c=ratingColor(v,m.inv);
+            const active=val===v;
+            const b=el("button",{class:"scale-btn",
+              style:active?{background:c+"33",borderColor:c,color:c}:{},
+              onClick:()=>setSym(m.id,v)
+            },String(v));
+            return b;
+          })
+        ),
+        m.inv?el("div",{style:{fontSize:"11px",color:"var(--muted)",marginTop:"5px"}},`1 = wenig ${m.label} · 5 = sehr viel`):null
+      );
+      return row;
+    })
+  ));
+
+  // ── Ereignisse
+  function makeEventSection(type,title,presets){
+    const items=draft.events.filter(e=>e.type===type);
+    const colorCls=type;
+    const section2=el("div",{style:{marginBottom:"6px"}},
+      el("span",{class:"cat-label"},title),
+      el("div",{class:"preset-wrap"},
+        ...presets.map(p=>el("button",{class:"preset-btn",onClick:()=>addEvent(type,p)},p))
+      ),
+      el("div",{style:{display:"flex",gap:"8px",marginBottom:"6px"}},
+        (()=>{
+          const inp=document.createElement("input");
+          inp.placeholder="Eigenes eingeben …";
+          inp.style.flex="1";
+          inp.onkeydown=e=>{if(e.key==="Enter"&&inp.value){addEvent(type,inp.value);inp.value="";}};
+          return inp;
+        })(),
+        el("button",{class:"btn sm ghost-sm",style:{width:"auto",flexShrink:"0"},
+          onClick(e){const inp=e.target.previousSibling;if(inp.value){addEvent(type,inp.value);inp.value="";}}},"＋")
+      ),
+      items.length?el("div",{class:"chips-wrap"},
+        ...items.map((ev,i)=>el("span",{class:`event-chip ${ev.type}`},
+          ev.label,
+          el("span",{class:"chip-del",onClick:()=>removeEvent(draft.events.indexOf(ev))},"×")
+        ))
+      ):null
+    );
+    return section2;
+  }
+
+  sec.appendChild(el("div",{class:"card"},
+    el("span",{class:"card-label"},"Ereignisse & Konsum"),
+    makeEventSection("pos","✅ Positive Effekte",EV_POS),
+    makeEventSection("neg","⚠️ Negative Effekte / Nebenwirkungen",EV_NEG),
+    makeEventSection("caff","☕ Koffein & Tee",EV_CAFF),
+    makeEventSection("food","🍽️ Essen",EV_FOOD),
+  ));
+
+  // ── Notiz
+  sec.appendChild(el("div",{class:"card"},
+    el("span",{class:"card-label"},"Notiz (optional)"),
+    (()=>{const ta=document.createElement("textarea");ta.placeholder="Was bemerkst du noch?";ta.value=draft.note;ta.oninput=e=>{S.draft.note=e.target.value;};return ta;})()
+  ));
+
+  sec.appendChild(el("button",{class:"btn green",onClick:saveCheckin},"💾 Speichern"));
+
+  const ex=S.data[S.selDate]?.checkins?.[hour];
+  if(ex)sec.appendChild(el("button",{class:"btn ghost",style:{color:"var(--red)"},
+    onClick:()=>{if(confirm("Eintrag löschen?"))deleteCheckin(hour);}
+  },"Eintrag löschen"));
+  sec.appendChild(el("button",{class:"btn ghost",onClick:()=>set({checkinHour:null,draft:null})},"Abbrechen"));
+
+  wrap.appendChild(sec);
+  return wrap;
+}
+
+// ── MED MODAL
+function renderMedModal(){
+  if(!S.showMed)return null;
+  const f=S.medForm;
+
+  const medSelect=document.createElement("select");
+  MEDS_PRESET.forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;if(f.medication===m)o.selected=true;medSelect.appendChild(o);});
+  const customOpt=document.createElement("option");customOpt.value="";customOpt.textContent="— Anderes eingeben —";medSelect.appendChild(customOpt);
+  medSelect.onchange=e=>{if(e.target.value)S.medForm.medication=e.target.value;};
+
+  const customInp=document.createElement("input");
+  customInp.placeholder="Anderes Medikament …";
+  customInp.value=MEDS_PRESET.includes(f.medication)?"":(f.medication||"");
+  customInp.oninput=e=>S.medForm.medication=e.target.value;
+
+  const doseInp=document.createElement("input");
+  doseInp.placeholder="z.B. 18, 36 …";doseInp.value=f.dosage;
+  doseInp.oninput=e=>S.medForm.dosage=e.target.value;
+
+  const timeInp=document.createElement("input");
+  timeInp.type="time";timeInp.value=f.takenAt;
+  timeInp.onchange=e=>S.medForm.takenAt=e.target.value;
+
+  const sheet=el("div",{class:"sheet",onClick:e=>e.stopPropagation()},
+    el("div",{class:"sheet-title"},"💊 Medikament"),
+    el("span",{class:"card-label"},"Medikament"),
+    medSelect,
+    el("span",{class:"card-label",style:{marginTop:"10px"}},"Oder freie Eingabe"),
+    customInp,
+    el("span",{class:"card-label",style:{marginTop:"10px"}},"Dosis (mg)"),
+    doseInp,
+    el("span",{class:"card-label",style:{marginTop:"10px"}},"Einnahmezeit"),
+    timeInp,
+    el("button",{class:"btn primary",style:{marginTop:"16px"},onClick:saveMed},"Speichern"),
+    el("button",{class:"btn ghost",onClick:()=>set({showMed:false})},"Abbrechen")
+  );
+  return el("div",{class:"overlay",onClick:()=>set({showMed:false})},sheet);
+}
+
+// ── TODAY VIEW
+function renderToday(){
+  const date=S.selDate, day=S.data[date]||{}, checkins=day.checkins||{};
+  const wrap=el("div",{});
+
+  // Date strip
+  const last7=getLast7();
+  const strip=el("div",{class:"date-strip"},
+    ...last7.map(d=>{
+      const dt=new Date(d+"T12:00");
+      const hasData=Object.keys(S.data[d]?.checkins||{}).length>0;
+      const isAct=d===S.selDate;
+      let cls="date-pill"+(isAct?" active":hasData?" has-data":"");
+      return el("button",{class:cls,onClick:()=>set({selDate:d})},
+        el("div",{class:"date-pill-dow"},dt.toLocaleDateString("de-DE",{weekday:"short"})),
+        el("div",{class:"date-pill-day"},String(dt.getDate())),
+        hasData?el("div",{class:"date-pill-dot"}):el("div",{style:{height:"7px"}})
+      );
+    })
+  );
+
+  const medBtn=el("button",{
+    class:"med-btn"+(day.medication?" has-med":""),
+    onClick:()=>{S.medForm={medication:day.medication||"",dosage:day.dosage||"",takenAt:day.takenAt||""};set({showMed:true});}
+  },day.medication?`💊 ${day.medication} ${day.dosage}`:"+ Medikament");
+
+  wrap.appendChild(el("div",{class:"topbar"},
+    el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}},
+      el("h1",{},date===todayStr()?"Heute":fmtDateS(date)),
+      medBtn
+    ),
+    strip
+  ));
+
+  const sec=el("div",{class:"section"});
+
+  // Timeline
+  const tl=el("div",{class:"timeline-scroll"},
+    el("div",{class:"timeline-row"},
+      ...HOURS.map(h=>{
+        const c=checkins[h];
+        const hasSym=c&&Object.keys(c.symptoms||{}).length>0;
+        const hasEv=c&&(c.events||[]).length>0;
+        const focus=c?.symptoms?.focus;
+        const col=hasSym&&focus?ratingColor(focus,false):hasEv?"var(--orange)":null;
+        const isNow=date===todayStr()&&h===nowHour();
+        const circle=el("div",{class:"hour-circle",
+          style:isNow?{border:"2px solid var(--accentL)",color:"var(--accentL)"}
+               :col?{border:`2px solid ${col}`,background:col+"22",color:col}:{}
+        },focus||( hasEv?"·":""));
+        if(day.takenAt&&parseInt(day.takenAt)===h){
+          circle.appendChild(el("span",{class:"med-badge"},"💊"));
+        }
+        return el("div",{class:"hour-dot",onClick:()=>openCheckin(h)},
+          circle,el("div",{class:"hour-label"},h+"h")
+        );
+      })
+    )
+  );
+
+  sec.appendChild(el("div",{class:"card"},
+    el("span",{class:"card-label"},"Tagesverlauf – tippe eine Stunde an"),
+    tl,
+    el("div",{style:{display:"flex",gap:"14px",marginTop:"10px"}},
+      ...([["Ausgefüllt","var(--green)"],["Jetzt","var(--accentL)"],["Leer","var(--dim)"]]).map(([l,c])=>
+        el("div",{style:{display:"flex",alignItems:"center",gap:"5px"}},
+          el("div",{style:{width:"8px",height:"8px",borderRadius:"50%",background:c}}),
+          el("span",{style:{fontSize:"10px",color:"var(--muted)"}},l)
+        )
+      )
+    )
+  ));
+
+  // Entry list
+  const entries=Object.entries(checkins).sort((a,b)=>+a[0]-+b[0]);
+  if(entries.length){
+    sec.appendChild(el("div",{class:"card"},
+      el("span",{class:"card-label"},"Einträge"),
+      ...entries.map(([h,c])=>{
+        const tags=METRICS.filter(m=>c.symptoms?.[m.id]).map(m=>{
+          const v=c.symptoms[m.id],col=ratingColor(v,m.inv);
+          return el("span",{class:"etag",style:{color:col,background:col+"22"}},`${m.icon}${v}`);
+        });
+        const evChips=(c.events||[]).map(e=>el("span",{class:`event-chip ${e.type}`,style:{fontSize:"11px",padding:"2px 8px"}},
+          (e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":"⚠️")+" "+e.label
+        ));
+        return el("div",{class:"entry-row",onClick:()=>openCheckin(+h)},
+          el("div",{class:"entry-time"},h+":00"),
+          el("div",{style:{flex:"1"}},
+            el("div",{class:"entry-tags"},...tags,...evChips),
+            c.note?el("div",{class:"entry-note"},c.note):null
+          )
+        );
+      })
+    ));
+  } else {
+    sec.appendChild(el("div",{class:"empty"},
+      el("div",{class:"empty-icon"},"🕐"),
+      el("div",{},"Tippe eine Stunde an,"),
+      el("div",{},"um deinen ersten Check-in zu starten.")
+    ));
+  }
+
+  wrap.appendChild(sec);
+  return wrap;
+}
+
+// ── HISTORY VIEW
+function renderHistory(){
+  const allDays=Object.keys(S.data).sort().reverse();
+  const wrap=el("div",{});
+  wrap.appendChild(el("div",{class:"topbar"},el("h1",{},"Verlauf"),el("div",{class:"sub"},`${allDays.length} Tage erfasst`)));
+  const sec=el("div",{class:"section"});
+
+  if(!allDays.length){sec.appendChild(el("div",{class:"empty"},el("div",{class:"empty-icon"},"📅"),el("div",{},"Noch keine Daten.")));wrap.appendChild(sec);return wrap;}
+
+  allDays.forEach(date=>{
+    const d=S.data[date];
+    const checks=Object.entries(d?.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
+    const fVals=checks.map(([,c])=>c.symptoms?.focus).filter(Boolean);
+    const dayAvg=fVals.length?(fVals.reduce((a,b)=>a+b,0)/fVals.length).toFixed(1):null;
+    const allEvs=checks.flatMap(([,c])=>c.events||[]);
+    const posC=allEvs.filter(e=>e.type==="pos").length;
+    const negC=allEvs.filter(e=>e.type==="neg").length;
+
+    const card=el("div",{class:"card",style:{cursor:"pointer"},onClick:()=>set({selDate:date,tab:"today"})},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}},
+        el("div",{},
+          el("div",{style:{fontWeight:"600",fontSize:"15px"}},fmtDateS(date)),
+          d?.medication?el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},`💊 ${d.medication} ${d.dosage}${d.takenAt?" · "+d.takenAt+"h":""}`)
+          :el("div",{style:{fontSize:"12px",color:"var(--dim)"}})
+        ),
+        dayAvg?el("div",{style:{textAlign:"center"}},
+          el("div",{style:{fontSize:"22px",fontWeight:"800",color:ratingColor(+dayAvg,false)}},dayAvg),
+          el("div",{style:{fontSize:"9px",color:"var(--muted)"}},"Ø Fokus")
+        ):null
+      ),
+      // mini bar chart
+      el("div",{style:{display:"flex",alignItems:"flex-end",gap:"3px",height:"24px",marginBottom:"6px"}},
+        ...HOURS.map(h=>{const c=d?.checkins?.[h];const f=c?.symptoms?.focus;
+          return el("div",{style:{flex:"1",borderRadius:"3px",minHeight:"3px",height:f?`${(f/5)*22}px`:"3px",
+            background:f?ratingColor(f,false):"var(--dim)",opacity:f?"0.85":"0.3"}});
+        })
+      ),
+      (posC||negC)?el("div",{style:{display:"flex",gap:"10px",fontSize:"12px"}},
+        posC?el("span",{style:{color:"var(--green)"}},`✅ ${posC} positive`):null,
+        negC?el("span",{style:{color:"var(--red)"}},`⚠️ ${negC} negative`):null
+      ):null
+    );
+    sec.appendChild(card);
+  });
+
+  wrap.appendChild(sec);
+  return wrap;
+}
+
+// ── STATS VIEW
+function renderStats(){
+  const checks=allCheckins();
+  const allDays=Object.keys(S.data).sort().reverse();
+  const wrap=el("div",{});
+  wrap.appendChild(el("div",{class:"topbar"},el("h1",{},"Auswertung"),el("div",{class:"sub"},`${checks.length} Check-ins · ${allDays.length} Tage`)));
+  const sec=el("div",{class:"section"});
+
+  if(checks.length<3){
+    sec.appendChild(el("div",{class:"empty"},el("div",{class:"empty-icon"},"📊"),el("div",{},"Noch zu wenig Daten."),el("div",{style:{fontSize:"13px",marginTop:"4px"}},"Mache mehr Check-ins.")));
+    wrap.appendChild(sec);return wrap;
+  }
+
+  // Sub-tabs
+  const TABS=[{id:"graph",label:"📈 Graph"},{id:"insights",label:"💡 Schlüsse"},{id:"compare",label:"💊 Vergleich"},{id:"events",label:"🔍 Ereignisse"},{id:"backup",label:"💾 Backup"}];
+  sec.appendChild(el("div",{class:"stat-tabs"},...TABS.map(t=>el("button",{class:"stat-tab"+(S.statsTab===t.id?" active":""),onClick:()=>set({statsTab:t.id})},t.label))));
+
+  // ── GRAPH TAB
+  if(S.statsTab==="graph"){
+    // Metric toggles
+    const toggleWrap=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"12px"}},
+      ...METRICS.map(m=>el("button",{
+        class:"btn sm"+(S.graphMetrics.includes(m.id)?" active":" ghost-sm"),
+        onClick:()=>{
+          const cur=S.graphMetrics;
+          const next=cur.includes(m.id)?cur.filter(x=>x!==m.id):[...cur,m.id];
+          set({graphMetrics:next.length?next:[m.id]});
+        }
+      },`${m.icon} ${m.label}`))
+    );
+    sec.appendChild(toggleWrap);
+
+    // Day selector for graph
+    const last7=getLast7();
+    const dayGraph=el("div",{class:"card"},
+      el("span",{class:"card-label"},`Tagesgraph – ${S.selDate===todayStr()?"Heute":fmtDateS(S.selDate)}`),
+      el("div",{class:"graph-wrap",html:buildDayGraph(S.selDate,S.graphMetrics)}),
+      // Legend
+      el("div",{class:"graph-legend"},
+        ...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),
+        el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme")),
+        el("div",{class:"legend-item"},el("span",{},"☕ Koffein  🍽️ Essen  ✅ Pos  ⚠️ Neg"))
+      ),
+      el("div",{style:{display:"flex",gap:"6px",marginTop:"10px",overflowX:"auto"}},
+        ...last7.slice().reverse().map(d=>{
+          const dt=new Date(d+"T12:00");
+          return el("button",{
+            class:"btn sm"+(S.selDate===d?" active":" ghost-sm"),
+            onClick:()=>set({selDate:d})
+          },`${dt.getDate()}.${dt.getMonth()+1}`);
+        })
+      )
+    );
+    sec.appendChild(dayGraph);
+
+    // Trend charts per selected metric
+    if(Object.keys(S.data).length>=3){
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"Verlauf über Zeit (Ø pro Tag)"),
+        ...S.graphMetrics.map(mid=>{
+          const m=METRICS.find(x=>x.id===mid);
+          return el("div",{style:{marginBottom:"16px"}},
+            el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),
+            svgEl(buildTrendGraph(mid,14))
+          );
+        })
+      ));
+
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"Ø Wirkungsverlauf über den Tag"),
+        ...S.graphMetrics.map(mid=>{
+          const m=METRICS.find(x=>x.id===mid);
+          return el("div",{style:{marginBottom:"16px"}},
+            el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),
+            svgEl(buildHourlyGraph(mid))
+          );
+        })
+      ));
+    }
+  }
+
+  // ── INSIGHTS TAB
+  if(S.statsTab==="insights"){
+    const ins=generateInsights();
+    if(!ins.length)sec.appendChild(el("div",{style:{textAlign:"center",padding:"40px 0",color:"var(--muted)"}},"Noch keine Muster erkennbar. Weiter tracken!"));
+    ins.forEach(i=>sec.appendChild(el("div",{class:`insight ${i.type}`},
+      el("div",{class:"insight-icon"},i.icon),
+      el("div",{class:`insight-title ${i.type}`},i.title),
+      el("div",{class:"insight-text"},i.text)
+    )));
+    // Ø stats
+    sec.appendChild(el("div",{class:"card"},
+      el("span",{class:"card-label"},"Ø Gesamtwerte"),
+      el("div",{class:"row3"},
+        ...METRICS.map(m=>{const v=avgStat(m.id);return el("div",{class:"mini-stat"},
+          el("div",{},m.icon),
+          el("div",{class:"mini-stat-num",style:{color:v!=="–"?ratingColor(+v,m.inv):"var(--muted)"}},v),
+          el("div",{class:"mini-stat-lbl"},m.label)
+        );})
+      ),
+      el("div",{style:{fontSize:"11px",color:"var(--muted)",marginTop:"6px"}},"⚡💥 niedrig = besser")
+    ));
+  }
+
+  // ── COMPARE TAB
+  if(S.statsTab==="compare"){
+    const medData=buildMedCompareData();
+    if(medData.length<2){
+      sec.appendChild(el("div",{style:{textAlign:"center",padding:"40px 0",color:"var(--muted)"}},
+        "Erfasse mindestens 2 verschiedene Medikamente/Dosierungen für einen Vergleich."
+      ));
+    } else {
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"Medikamente im Vergleich"),
+        ...medData.map((med,mi)=>{
+          const colors=["var(--accent)","var(--green)","var(--yellow)","var(--purple)"];
+          const c=colors[mi%colors.length];
+          return el("div",{style:{marginBottom:"16px",paddingBottom:"16px",borderBottom:mi<medData.length-1?"1px solid var(--border)":"none"}},
+            el("div",{style:{fontSize:"15px",fontWeight:"700",color:c,marginBottom:"8px"}},`${med.name} (${med.days} Tage)`),
+            el("div",{class:"row3",style:{marginBottom:"8px"}},
+              ...[["🎯","Fokus",med.avgFocus],["😊","Stimmung",med.avgMood],["🔋","Energie",med.avgEnergy]].map(([icon,lbl,val])=>
+                el("div",{class:"mini-stat"},el("div",{},icon),
+                  el("div",{class:"mini-stat-num",style:{color:val!=="–"?ratingColor(+val,false):c}},val),
+                  el("div",{class:"mini-stat-lbl"},lbl)
+                )
+              )
+            ),
+            el("div",{style:{display:"flex",gap:"12px",fontSize:"13px"}},
+              el("span",{style:{color:"var(--green)"}},`✅ Ø ${med.posRate} pos/Check-in`),
+              el("span",{style:{color:"var(--red)"}},`⚠️ Ø ${med.negRate} neg/Check-in`)
+            )
+          );
+        })
+      ));
+    }
+    // Compare graph
+    if(medData.length>=1&&Object.keys(S.data).length>=3){
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"Fokus-Verlauf (alle Tage)"),
+        svgEl(buildTrendGraph("focus",30))
+      ));
+    }
+  }
+
+  // ── EVENTS TAB
+  if(S.statsTab==="events"){
+    const counts=eventCounts();
+    const byType={pos:[],neg:[],caff:[],food:[]};
+    Object.entries(counts).forEach(([k,n])=>{
+      const [type,...rest]=k.split(":");
+      if(byType[type])byType[type].push({label:rest.join(":"),count:n});
+    });
+    [["pos","✅ Positive Effekte","var(--green)"],["neg","⚠️ Negative Effekte","var(--red)"],
+     ["caff","☕ Koffein & Tee","var(--accentL)"],["food","🍽️ Essen","var(--orange)"]].forEach(([type,title,col])=>{
+      const items=byType[type].sort((a,b)=>b.count-a.count).slice(0,8);
+      if(!items.length)return;
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},title),
+        ...items.map(({label,count})=>el("div",{style:{marginBottom:"10px"}},
+          el("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"14px",marginBottom:"4px"}},
+            el("span",{},label),el("span",{style:{color:"var(--muted)"}},count+"×")
+          ),
+          el("div",{class:"sbar-wrap"},el("div",{class:"sbar-fill",style:{width:`${Math.min(count/checks.length*100*3,100)}%`,background:col}}))
+        ))
+      ));
+    });
+  }
+
+  // ── BACKUP TAB
+  if(S.statsTab==="backup"){
+    sec.appendChild(el("div",{class:"backup-card"},
+      el("div",{style:{fontSize:"15px",fontWeight:"700",color:"var(--accentL)",marginBottom:"4px"}},"💾 Backup & Export"),
+      el("div",{style:{fontSize:"14px",color:"var(--muted)",marginBottom:"14px",lineHeight:"1.6"}},"Daten sind nur lokal gespeichert. Regelmäßig sichern – am besten wöchentlich."),
+      el("div",{class:"backup-row"},
+        el("button",{class:"bup-btn",onClick:copyReport},el("span",{class:"bup-icon"},"📋"),"Kopieren"),
+        el("button",{class:"bup-btn",onClick:exportMail},el("span",{class:"bup-icon"},"✉️"),"Per Mail"),
+        el("button",{class:"bup-btn",onClick:exportJSON},el("span",{class:"bup-icon"},"📥"),"JSON")
+      ),
+      el("button",{class:"bup-btn",style:{width:"100%",flexDirection:"row",justifyContent:"center",gap:"8px"},
+        onClick:()=>set({showImport:!S.showImport})},el("span",{},"📤"),"Backup wiederherstellen"),
+      S.showImport?(()=>{
+        let v="";
+        const ta=document.createElement("textarea");ta.className="import-area";ta.placeholder="JSON einfügen …";ta.oninput=e=>v=e.target.value;
+        return el("div",{},ta,el("button",{class:"btn primary",style:{marginTop:"8px"},onClick:()=>importJSON(v)},"Wiederherstellen"));
+      })():null
+    ));
+    sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Arzt-Bericht"),el("div",{class:"report-box"},buildReport())));
+  }
+
+  wrap.appendChild(sec);
+  return wrap;
+}
+
+// ─── MAIN RENDER ──────────────────────────────────────────────────────────────
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML="";
+
+  let view;
+  if(S.checkinHour!==null&&S.draft) view=renderCheckin();
+  else if(S.tab==="today")   view=renderToday();
+  else if(S.tab==="history") view=renderHistory();
+  else if(S.tab==="stats")   view=renderStats();
+  if(view)app.appendChild(view);
+
+  const modal=renderMedModal();
+  if(modal)app.appendChild(modal);
+
+  if(S.checkinHour===null){
+    app.appendChild(el("nav",{},
+      ...[{id:"today",icon:"🏠",label:"Heute"},{id:"history",icon:"📅",label:"Verlauf"},{id:"stats",icon:"📊",label:"Auswertung"}]
+      .map(({id,icon,label})=>el("button",{class:"nav-btn"+(S.tab===id?" active":""),onClick:()=>set({tab:id,selDate:todayStr()})},
+        el("span",{class:"nav-icon"},icon),label
+      ))
+    ));
+  }
+}
+
+render();
+</script>
+</body>
+</html>
