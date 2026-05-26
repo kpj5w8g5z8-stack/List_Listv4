@@ -228,10 +228,57 @@ nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-w
   letter-spacing:.07em;white-space:normal;word-break:break-word;line-height:1.3;}
 .vital-field input{padding:10px 8px;font-size:14px;min-width:0;width:100%;
   -webkit-appearance:none;appearance:none;overflow:hidden;}
+
+/* ── Print Stylesheet (DIN A4) ─────────────────────────────────────────────── */
+#print-report-overlay{display:none;}
+@media print{
+  /* Alles ausblenden */
+  body > #app{display:none!important;}
+  nav{display:none!important;}
+  .toast{display:none!important;}
+  /* Druckbereich einblenden */
+  #print-report-overlay{
+    display:block!important;
+    position:fixed;inset:0;z-index:9999;
+    background:#fff;color:#000;
+    font-family:Arial,Helvetica,sans-serif;
+    font-size:11pt;line-height:1.7;
+    padding:18mm 20mm 18mm 20mm;
+    box-sizing:border-box;
+  }
+  #print-report-overlay h1{
+    font-size:15pt;font-weight:700;border-bottom:2px solid #000;
+    padding-bottom:4pt;margin-bottom:10pt;letter-spacing:0.03em;
+  }
+  #print-report-overlay h2{
+    font-size:11pt;font-weight:700;margin-top:14pt;margin-bottom:4pt;
+    text-transform:uppercase;letter-spacing:0.07em;
+    border-bottom:1px solid #aaa;padding-bottom:2pt;
+  }
+  #print-report-overlay .pr-meta{
+    font-size:9pt;color:#555;margin-bottom:10pt;
+  }
+  #print-report-overlay .pr-row{
+    display:flex;gap:32pt;margin-bottom:5pt;flex-wrap:wrap;
+  }
+  #print-report-overlay .pr-kv{min-width:140pt;}
+  #print-report-overlay .pr-label{font-size:8.5pt;color:#555;text-transform:uppercase;letter-spacing:0.05em;}
+  #print-report-overlay .pr-value{font-size:13pt;font-weight:700;color:#000;}
+  #print-report-overlay .pr-divider{
+    border:none;border-top:1px solid #ccc;margin:10pt 0;
+  }
+  #print-report-overlay .pr-list{margin:0;padding-left:14pt;}
+  #print-report-overlay .pr-list li{margin-bottom:3pt;}
+  #print-report-overlay .pr-note{
+    font-size:8.5pt;color:#666;margin-top:10pt;border-top:1px solid #ddd;padding-top:8pt;
+  }
+  @page{size:A4 portrait;margin:0;}
+}
 </style>
 </head>
 <body>
 <div id="app"></div>
+<div id="print-report-overlay"></div>
 <script>
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SK = "adhs_v4";
@@ -702,35 +749,302 @@ function svgEl(html){const d=document.createElement("div");d.innerHTML=html;retu
 function showToast(msg){const t=el("div",{class:"toast"},msg);document.body.appendChild(t);setTimeout(()=>t.remove(),2100);}
 
 // ─── BACKUP ───────────────────────────────────────────────────────────────────
-function buildReport(){
+
+// ── Klinisches Arzt-Dashboard (strukturierter Report) ─────────────────────────
+function buildReportData(){
   const allDays=Object.keys(S.data).sort().reverse();
   const checks=allCheckins();
-  const best=getBestHour();
-  const lines=[
-    `ADHS Tagesverlauf-Protokoll – ${new Date().toLocaleDateString("de-DE")}`,
-    `Erfasste Tage: ${allDays.length} | Check-ins: ${checks.length}`,
-    best?`Beste Wirkungszeit: ~${best.hour}:00 Uhr (Ø Fokus ${best.avg.toFixed(1)}/5)`:"",
-    `Ø Fokus: ${avgStat("focus")}/5  Ø Stimmung: ${avgStat("mood")}/5  Ø Energie: ${avgStat("energy")}/5`,
-    "","Letzte Einträge:"
-  ];
-  allDays.slice(0,7).forEach(date=>{
+  const totalCheckins=checks.length;
+  const today=new Date().toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});
+
+  // ── SEKTION 1: KARDIO & VITALDATEN ────────────────────────────────────────
+  // Gewicht: erstes vs. letztes
+  const weightDays=allDays.filter(d=>S.data[d]?.gewicht).sort();
+  const startWeight=weightDays.length?+S.data[weightDays[0]].gewicht:null;
+  const currentWeight=weightDays.length?+S.data[weightDays[weightDays.length-1]].gewicht:null;
+  const weightDiff=startWeight&&currentWeight?(currentWeight-startWeight).toFixed(1):null;
+
+  // Blutdruck & Puls Durchschnitt
+  const bpDays=allDays.filter(d=>S.data[d]?.sys&&S.data[d]?.dia);
+  const avgSys=bpDays.length?Math.round(bpDays.reduce((s,d)=>s+(+S.data[d].sys),0)/bpDays.length):null;
+  const avgDia=bpDays.length?Math.round(bpDays.reduce((s,d)=>s+(+S.data[d].dia),0)/bpDays.length):null;
+  const pulsDays=allDays.filter(d=>S.data[d]?.puls);
+  const avgPuls=pulsDays.length?Math.round(pulsDays.reduce((s,d)=>s+(+S.data[d].puls),0)/pulsDays.length):null;
+
+  // ── SEKTION 2: MEDIKATIONS-ANALYSE ────────────────────────────────────────
+  // Durchschnittliche spürbare Wirkdauer: Zeit zwischen Einnahme und "Wirkung weg"/"Rebound"-Event
+  const wirkDauern=[];
+  allDays.forEach(date=>{
     const d=S.data[date];
-    let dayLine=`\n${fmtDateS(date)}`;
-    if(d?.medication)dayLine+=` – ${d.medication} ${d.dosage}${d.manufacturer?" ("+d.manufacturer+")":""}`;
-    if(d?.aufgestandenAt)dayLine+=` | Aufgest.:${d.aufgestandenAt}`;
-    if(d?.schlafenAt)dayLine+=` | Schlafen:${d.schlafenAt}`;
-    if(d?.gewicht)dayLine+=` | Gewicht:${d.gewicht}kg`;
-    if(d?.sys)dayLine+=` | RR:${d.sys}/${d.dia} P:${d.puls}`;
-    lines.push(dayLine);
-    Object.entries(d?.checkins||{}).sort((a,b)=>+a[0]-+b[0]).forEach(([h,c])=>{
-      const syms=METRICS.filter(m=>c.symptoms?.[m.id]).map(m=>`${m.icon}${c.symptoms[m.id]}`).join(" ");
-      const evs=(c.events||[]).map(e=>(e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•")+e.label).join(", ");
-      const hf=Object.entries(c.healthFlags||{}).filter(([,v])=>v).map(([id])=>HEALTH_FLAGS.find(f=>f.id===id)?.label||id).join(", ");
-      lines.push(`  ${h}:00 ${syms}${evs?" | "+evs:""}${hf?" | "+hf:""}${c.note?" – "+c.note:""}`);
+    if(!d?.takenAt)return;
+    const medH=parseFloat(d.takenAt.replace(":","."));
+    // Finde früheste Stunde mit Rebound/Wirkung-weg-Event
+    const cEntries=Object.entries(d.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
+    const reboundEntry=cEntries.find(([h,c])=>+h>medH&&(c.events||[]).some(e=>e.type==="neg"&&(e.label.includes("Rebound")||e.label.includes("Wirkung weg"))));
+    if(reboundEntry){wirkDauern.push(+reboundEntry[0]-medH);}
+  });
+  const avgWirkDauer=wirkDauern.length?(wirkDauern.reduce((a,b)=>a+b,0)/wirkDauern.length).toFixed(1):null;
+
+  // Fokus-Differenz mit vs. ohne Medikation (Tage)
+  const fokusWithMed=[];
+  const fokusWithoutMed=[];
+  allDays.forEach(date=>{
+    const d=S.data[date];
+    const dayChecks=Object.values(d?.checkins||{});
+    const fVals=dayChecks.map(c=>c.symptoms?.focus).filter(Boolean);
+    if(!fVals.length)return;
+    const dayAvg=fVals.reduce((a,b)=>a+b,0)/fVals.length;
+    if(d?.medication)fokusWithMed.push(dayAvg);
+    else fokusWithoutMed.push(dayAvg);
+  });
+  const avgFMed=fokusWithMed.length?(fokusWithMed.reduce((a,b)=>a+b,0)/fokusWithMed.length):null;
+  const avgFNoMed=fokusWithoutMed.length?(fokusWithoutMed.reduce((a,b)=>a+b,0)/fokusWithoutMed.length):null;
+  const fokusDiff=(avgFMed&&avgFNoMed)?Math.round((avgFMed-avgFNoMed)/avgFNoMed*100):null;
+
+  // Präzises Rebound-Zeitfenster (Uhrzeit der Rebound-Events)
+  const reboundHours=[];
+  allDays.forEach(date=>{
+    Object.entries(S.data[date]?.checkins||{}).forEach(([h,c])=>{
+      if((c.events||[]).some(e=>e.type==="neg"&&(e.label.includes("Rebound")||e.label.includes("Wirkung weg"))))
+        reboundHours.push(+h);
     });
   });
-  return lines.filter(l=>l!==undefined).join("\n");
+  const reboundMin=reboundHours.length?Math.min(...reboundHours):null;
+  const reboundMax=reboundHours.length?Math.max(...reboundHours):null;
+  const reboundAvg=reboundHours.length?Math.round(reboundHours.reduce((a,b)=>a+b,0)/reboundHours.length):null;
+
+  // ── SEKTION 3: VERHALTENS- & TRIGGER-INSIGHTS ─────────────────────────────
+  // Schlafqualität → Fokus Folgetag (Korrelation)
+  // "Schlafqualität" = Schlafdauer in h (wenn beide Zeiten vorhanden)
+  const sleepFocusPairs=[];
+  const sortedDays=[...allDays].sort();
+  sortedDays.forEach((date,i)=>{
+    const d=S.data[date];
+    if(!d?.schlafenAt||!d?.aufgestandenAt)return;
+    const nextDate=sortedDays[i+1];
+    if(!nextDate)return;
+    const sleepH=parseFloat(d.schlafenAt.replace(":","."));
+    const wakeH=parseFloat(d.aufgestandenAt.replace(":","."));
+    // Schlafdauer: wenn schlafenAt > wakeH angenommen, dann nächster Tag
+    let duration=wakeH-sleepH; if(duration<0)duration+=24;
+    const nextChecks=Object.values(S.data[nextDate]?.checkins||{});
+    const nextFocus=nextChecks.map(c=>c.symptoms?.focus).filter(Boolean);
+    if(nextFocus.length&&duration>2&&duration<14){
+      sleepFocusPairs.push({sleep:duration,focus:nextFocus.reduce((a,b)=>a+b,0)/nextFocus.length});
+    }
+  });
+  // Pearson Korrelation
+  let sleepCorr=null;
+  if(sleepFocusPairs.length>=3){
+    const n=sleepFocusPairs.length;
+    const ms=sleepFocusPairs.reduce((a,p)=>a+p.sleep,0)/n;
+    const mf=sleepFocusPairs.reduce((a,p)=>a+p.focus,0)/n;
+    const num=sleepFocusPairs.reduce((a,p)=>a+(p.sleep-ms)*(p.focus-mf),0);
+    const den=Math.sqrt(sleepFocusPairs.reduce((a,p)=>a+(p.sleep-ms)**2,0)*sleepFocusPairs.reduce((a,p)=>a+(p.focus-mf)**2,0));
+    sleepCorr=den>0?(num/den).toFixed(2):null;
+  }
+  const avgSleepDur=sleepFocusPairs.length?(sleepFocusPairs.reduce((a,p)=>a+p.sleep,0)/sleepFocusPairs.length).toFixed(1):null;
+
+  // Hunger/ausgelassene Mahlzeiten → Unruhe/Impulsivität
+  const hungerUnrestPairs=[];
+  allDays.forEach(date=>{
+    const d=S.data[date];
+    const cEntries=Object.entries(d?.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
+    cEntries.forEach(([,c],i)=>{
+      // Hunger-Score (hoch = viel Hunger)
+      const hungerVal=c.symptoms?.hunger;
+      if(!hungerVal)return;
+      const unrestVal=c.symptoms?.unrest;
+      const impulseVal=c.symptoms?.impulse;
+      if(unrestVal||impulseVal)
+        hungerUnrestPairs.push({hunger:hungerVal,neg:((unrestVal||0)+(impulseVal||0))/((unrestVal?1:0)+(impulseVal?1:0)||1)});
+    });
+  });
+  let hungerCorr=null;
+  if(hungerUnrestPairs.length>=3){
+    const n=hungerUnrestPairs.length;
+    const mh=hungerUnrestPairs.reduce((a,p)=>a+p.hunger,0)/n;
+    const mn=hungerUnrestPairs.reduce((a,p)=>a+p.neg,0)/n;
+    const num=hungerUnrestPairs.reduce((a,p)=>a+(p.hunger-mh)*(p.neg-mn),0);
+    const den=Math.sqrt(hungerUnrestPairs.reduce((a,p)=>a+(p.hunger-mh)**2,0)*hungerUnrestPairs.reduce((a,p)=>a+(p.neg-mn)**2,0));
+    hungerCorr=den>0?(num/den).toFixed(2):null;
+  }
+
+  // Top 3 häufigste Health Flags in %
+  const hfCounts={};
+  let hfTotal=0;
+  allDays.forEach(d=>{
+    Object.values(S.data[d]?.checkins||{}).forEach(c=>{
+      Object.entries(c.healthFlags||{}).forEach(([id,v])=>{
+        hfTotal++;
+        if(v)hfCounts[id]=(hfCounts[id]||0)+1;
+      });
+    });
+  });
+  const topFlags=HEALTH_FLAGS
+    .map(f=>({label:f.icon+" "+f.label,count:hfCounts[f.id]||0}))
+    .filter(f=>f.count>0)
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,3)
+    .map(f=>({...f,pct:hfTotal>0?Math.round(f.count/hfTotal*100*HEALTH_FLAGS.length):0}));
+
+  // Aktuelles Medikament
+  const latestMedDay=allDays.find(d=>S.data[d]?.medication);
+  const currentMed=latestMedDay?`${S.data[latestMedDay].medication} ${S.data[latestMedDay].dosage}${S.data[latestMedDay].manufacturer?" ("+S.data[latestMedDay].manufacturer+")":""}`.trim():"k. A.";
+
+  return{
+    today,allDays,totalCheckins,
+    startWeight,currentWeight,weightDiff,
+    avgSys,avgDia,avgPuls,bpDays,
+    avgWirkDauer,wirkDauern,
+    avgFMed,avgFNoMed,fokusDiff,
+    reboundMin,reboundMax,reboundAvg,reboundHours,
+    sleepCorr,avgSleepDur,sleepFocusPairs,
+    hungerCorr,hungerUnrestPairs,
+    topFlags,currentMed,
+  };
 }
+
+function buildReport(){
+  const r=buildReportData();
+  const na="k. A.";
+  function pct(v){return v!==null?`${v>0?"+":""}${v}%`:na;}
+  function corr(v){
+    if(v===null)return na;
+    const n=+v;
+    const dir=n>0?"positiv":"negativ";
+    const stärke=Math.abs(n)<0.2?"sehr schwach":Math.abs(n)<0.4?"schwach":Math.abs(n)<0.6?"moderat":"stark";
+    return`r = ${v} (${stärke}, ${dir})`;
+  }
+
+  const lines=[
+`ADHS TAGESVERLAUF-PROTOKOLL
+Erstellt: ${r.today}  |  Beobachtungszeitraum: ${r.allDays.length} Tage  |  Check-ins gesamt: ${r.totalCheckins}
+Aktuelles Medikament: ${r.currentMed}
+${"═".repeat(60)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SEKTION 1 – KARDIO & VITALDATEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+`  Startgewicht:        ${r.startWeight?r.startWeight+" kg":na}`,
+`  Aktuelles Gewicht:   ${r.currentWeight?r.currentWeight+" kg":na}  (Differenz: ${r.weightDiff?r.weightDiff+" kg":na})`,
+`  Ø Blutdruck (SYS):  ${r.avgSys?r.avgSys+" mmHg":na}  (aus ${r.bpDays.length} Messungen)`,
+`  Ø Blutdruck (DIA):  ${r.avgDia?r.avgDia+" mmHg":na}`,
+`  Ø Puls:             ${r.avgPuls?r.avgPuls+" bpm":na}`,
+`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SEKTION 2 – MEDIKATIONS-ANALYSE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+`  Ø spürbare Wirkdauer:     ${r.avgWirkDauer?r.avgWirkDauer+" h":na}  (aus ${r.wirkDauern.length} Rebound-Ereignissen)`,
+`  Fokus MIT Medikation:     ${r.avgFMed?r.avgFMed.toFixed(1)+"/5":na}`,
+`  Fokus OHNE Medikation:    ${r.avgFNoMed?r.avgFNoMed.toFixed(1)+"/5":na}`,
+`  Fokus-Differenz:          ${r.fokusDiff!==null?pct(r.fokusDiff):na}  ${r.fokusDiff>0?"(Med. wirksam)":r.fokusDiff<0?"(kein positiver Effekt erkennbar)":""}`,
+`  Rebound-Zeitfenster:      ${r.reboundHours.length?`${r.reboundMin}:00–${r.reboundMax}:00 Uhr  (Ø ${r.reboundAvg}:00 Uhr, n=${r.reboundHours.length})`  :na}`,
+`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SEKTION 3 – VERHALTENS- & TRIGGER-INSIGHTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+`  Schlaf → Fokus (Folgetag):`,
+`    Korrelation:       ${corr(r.sleepCorr)}`,
+`    Ø Schlafdauer:     ${r.avgSleepDur?r.avgSleepDur+" h":na}  (aus ${r.sleepFocusPairs.length} Nächten)`,
+``,
+`  Hunger → Unruhe/Impulsivität:`,
+`    Korrelation:       ${corr(r.hungerCorr)}`,
+`    Datenpunkte:       ${r.hungerUnrestPairs.length}`,
+``,
+`  Top Health-Flags (% der Einträge):`,
+  ...( r.topFlags.length
+    ? r.topFlags.map((f,i)=>`    ${i+1}. ${f.label}: ${f.pct}% (${f.count}×)`)
+    : ["    Keine Health-Flags erfasst."]
+  ),
+`
+${"═".repeat(60)}
+Bericht generiert von ADHS Tagebuch-App.
+Kein Ersatz für ärztliche Diagnose oder Beratung.`
+  ];
+  return lines.join("\n");
+}
+
+// ── Druckfunktion (öffnet Druckdialog mit sauberem A4-Layout) ─────────────────
+function printReport(){
+  const r=buildReportData();
+  const na="k. A.";
+  function pct(v){return v!==null?`${v>0?"+":""}${v}%`:na;}
+  function corr(v){
+    if(v===null)return na;
+    const n=+v;
+    const stärke=Math.abs(n)<0.2?"sehr schwach":Math.abs(n)<0.4?"schwach":Math.abs(n)<0.6?"moderat":"stark";
+    const dir=n>0?"positiv":"negativ";
+    return`r = ${v} (${stärke}, ${dir})`;
+  }
+
+  function row(label,value){
+    return`<div class="pr-kv"><div class="pr-label">${label}</div><div class="pr-value">${value}</div></div>`;
+  }
+
+  const html=`
+    <h1>ADHS Tagesverlauf-Protokoll</h1>
+    <div class="pr-meta">
+      Erstellt: ${r.today} &nbsp;|&nbsp; Beobachtungszeitraum: ${r.allDays.length} Tage &nbsp;|&nbsp;
+      Check-ins gesamt: ${r.totalCheckins} &nbsp;|&nbsp; Medikament: <strong>${r.currentMed}</strong>
+    </div>
+    <hr class="pr-divider">
+
+    <h2>Sektion 1 – Kardio &amp; Vitaldaten</h2>
+    <div class="pr-row">
+      ${row("Startgewicht", r.startWeight ? r.startWeight+" kg" : na)}
+      ${row("Aktuelles Gewicht", r.currentWeight ? r.currentWeight+" kg" : na)}
+      ${row("Gewichtsveränderung", r.weightDiff ? (r.weightDiff>0?"+":"")+r.weightDiff+" kg" : na)}
+    </div>
+    <div class="pr-row">
+      ${row("Ø Blutdruck SYS", r.avgSys ? r.avgSys+" mmHg" : na)}
+      ${row("Ø Blutdruck DIA", r.avgDia ? r.avgDia+" mmHg" : na)}
+      ${row("Ø Puls", r.avgPuls ? r.avgPuls+" bpm" : na)}
+    </div>
+    <div class="pr-meta" style="margin-top:4pt">Blutdruck-Messungen: ${r.bpDays.length}</div>
+    <hr class="pr-divider">
+
+    <h2>Sektion 2 – Medikations-Analyse</h2>
+    <div class="pr-row">
+      ${row("Ø spürb. Wirkdauer", r.avgWirkDauer ? r.avgWirkDauer+" h" : na)}
+      ${row("Rebound-Ereignisse", r.wirkDauern.length > 0 ? r.wirkDauern.length+"×" : na)}
+      ${row("Rebound-Zeitfenster", r.reboundHours.length ? r.reboundMin+":00–"+r.reboundMax+":00 Uhr (Ø "+r.reboundAvg+":00)" : na)}
+    </div>
+    <div class="pr-row">
+      ${row("Ø Fokus MIT Medikation", r.avgFMed ? r.avgFMed.toFixed(1)+"/5" : na)}
+      ${row("Ø Fokus OHNE Medikation", r.avgFNoMed ? r.avgFNoMed.toFixed(1)+"/5" : na)}
+      ${row("Fokus-Differenz", r.fokusDiff !== null ? pct(r.fokusDiff)+(r.fokusDiff>0?" ↑ wirksam":r.fokusDiff<0?" ↓ kein Effekt":"") : na)}
+    </div>
+    <hr class="pr-divider">
+
+    <h2>Sektion 3 – Verhaltens- &amp; Trigger-Insights</h2>
+    <div class="pr-row">
+      ${row("Schlaf → Fokus (Korrelation)", corr(r.sleepCorr))}
+      ${row("Ø Schlafdauer", r.avgSleepDur ? r.avgSleepDur+" h" : na)}
+      ${row("Schlaf-Datenpunkte", r.sleepFocusPairs.length)}
+    </div>
+    <div class="pr-row">
+      ${row("Hunger → Unruhe/Impuls (Korrelation)", corr(r.hungerCorr))}
+      ${row("Datenpunkte", r.hungerUnrestPairs.length)}
+    </div>
+    <div style="margin-top:8pt">
+      <div class="pr-label" style="margin-bottom:5pt">TOP 3 HEALTH FLAGS (% DER EINTRÄGE)</div>
+      ${r.topFlags.length
+        ? `<ul class="pr-list">`+r.topFlags.map((f,i)=>`<li>${i+1}. ${f.label}: <strong>${f.pct}%</strong> (${f.count}×)</li>`).join("")+`</ul>`
+        : `<span style="color:#888">Keine Health-Flags erfasst.</span>`
+      }
+    </div>
+    <div class="pr-note">
+      Bericht generiert von ADHS Tagebuch-App – ${r.today}<br>
+      Dieser Bericht dient ausschließlich der Dokumentation und ist kein Ersatz für ärztliche Diagnose oder medizinische Beratung.
+    </div>
+  `;
+
+  const overlay=document.getElementById("print-report-overlay");
+  overlay.innerHTML=html;
+  window.print();
+}
+
 function copyReport(){const t=buildReport();if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>showToast("✓ Bericht kopiert!")).catch(()=>prompt("Kopieren:",t));else prompt("Kopieren:",t);}
 function exportMail(){const b=encodeURIComponent(buildReport());const s=encodeURIComponent(`ADHS Protokoll – ${new Date().toLocaleDateString("de-DE")}`);window.location.href=`mailto:?subject=${s}&body=${b}`;}
 function exportJSON(){const j=JSON.stringify(S.data,null,2);const b=new Blob([j],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=`adhs-backup-${todayStr()}.json`;a.click();URL.revokeObjectURL(u);}
@@ -1414,6 +1728,8 @@ function renderStats(){
         el("button",{class:"bup-btn",onClick:exportMail},el("span",{class:"bup-icon"},"✉️"),"Per Mail"),
         el("button",{class:"bup-btn",onClick:exportJSON},el("span",{class:"bup-icon"},"📥"),"JSON")
       ),
+      el("button",{class:"bup-btn",style:{width:"100%",flexDirection:"row",justifyContent:"center",gap:"8px",marginBottom:"8px",background:"rgba(96,165,250,.12)",borderColor:"rgba(96,165,250,.4)",color:"var(--accentL)"},
+        onClick:printReport},el("span",{},"🖨️"),"Bericht drucken / PDF"),
       el("button",{class:"bup-btn",style:{width:"100%",flexDirection:"row",justifyContent:"center",gap:"8px"},
         onClick:()=>set({showImport:!S.showImport})},el("span",{},"📤"),"Backup wiederherstellen"),
       S.showImport?(()=>{
