@@ -490,7 +490,7 @@ function buildMedCompareData(mode="day"){
 
 // ─── SVG GRAPH ────────────────────────────────────────────────────────────────
 function buildDayGraph(date,selectedMetrics){
-  const W=360,ICON_H=22,H=190,PAD={t:ICON_H+14,r:10,b:28,l:28};
+  const W=360,ICON_H=34,H=202,PAD={t:ICON_H+14,r:10,b:28,l:28};
   const gW=W-PAD.l-PAD.r, gH=H-PAD.t-PAD.b;
   const day=S.data[date]||{};
   const pts=buildDayTimeline(date);
@@ -541,14 +541,23 @@ function buildDayGraph(date,selectedMetrics){
     });
   });
 
-  // Event icons at TOP (above graph area)
+  // Event icons at TOP (above graph area) – two rows:
+  // Row 1 (topmost): pos ✅ and neg ⚠️ effects
+  // Row 2: caff ☕ and food 🍽️
   const evByHour={};
   pts.forEach(p=>{if(p.events.length)evByHour[p.hour]=p.events;});
   Object.entries(evByHour).forEach(([h,evs])=>{
     const x=xOf(+h);
-    const icons=evs.slice(0,3).map(e=>e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•");
-    icons.forEach((ic,i)=>{
-      svg+=`<text x="${x+(i-icons.length/2+0.5)*12}" y="${ICON_H-2}" text-anchor="middle" font-size="11">${ic}</text>`;
+    // Split events into two groups
+    const effectIcons=evs.filter(e=>e.type==="pos"||e.type==="neg").slice(0,3).map(e=>e.type==="pos"?"✅":"⚠️");
+    const consumeIcons=evs.filter(e=>e.type==="caff"||e.type==="food").slice(0,3).map(e=>e.type==="caff"?"☕":"🍽️");
+    // Row 1: pos/neg effects (y = ICON_H - 2, i.e. original single-row position, shifted up by one row height)
+    effectIcons.forEach((ic,i)=>{
+      svg+=`<text x="${x+(i-effectIcons.length/2+0.5)*12}" y="${ICON_H-13}" text-anchor="middle" font-size="11">${ic}</text>`;
+    });
+    // Row 2: caff/food (y = ICON_H - 2, original position)
+    consumeIcons.forEach((ic,i)=>{
+      svg+=`<text x="${x+(i-consumeIcons.length/2+0.5)*12}" y="${ICON_H-2}" text-anchor="middle" font-size="11">${ic}</text>`;
     });
   });
 
@@ -1168,7 +1177,7 @@ function renderStats(){
         el("div",{class:"legend-item"},el("span",{},"☕ Koffein  🍽️ Essen  ✅ Pos  ⚠️ Neg"))
       ),
       el("div",{style:{display:"flex",gap:"6px",marginTop:"10px",overflowX:"auto"}},
-        ...last7.slice().reverse().map(d=>{
+        ...last7.map(d=>{
           const dt=new Date(d+"T12:00");
           return el("button",{
             class:"btn sm"+(S.selDate===d?" active":" ghost-sm"),
