@@ -27,10 +27,15 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Di
 
 /* ── Layout */
 .section{padding:0 16px;}
-.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px;}
-.card-label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px;overflow:hidden;}
+.card-label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;margin-top:0;}
+.row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;overflow:hidden;}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;overflow:hidden;}
+.row4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;overflow:hidden;}
+@media(max-width:320px){
+  .row4{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .row3{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
 
 /* ── Buttons */
 .btn{width:100%;border:none;border-radius:14px;padding:15px;font-size:16px;font-weight:700;
@@ -45,10 +50,13 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Di
 
 /* ── Inputs */
 input,textarea,select{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--border);
-  border-radius:12px;padding:13px 15px;color:var(--text);font-size:16px;font-family:inherit;outline:none;}
-select{background:#161d30;appearance:none;-webkit-appearance:none;}
+  border-radius:12px;padding:13px 15px;color:var(--text);font-size:16px;font-family:inherit;outline:none;
+  box-sizing:border-box;min-width:0;-webkit-appearance:none;appearance:none;}
+select{background:#161d30;-webkit-appearance:none;appearance:none;}
 textarea{min-height:70px;resize:vertical;line-height:1.6;}
-input[type=time],input[type=date]{padding:10px 14px;font-size:15px;}
+/* iOS time/date: overflow:hidden + max-width:100% zwingt den Browser,
+   den Input in seinen Container zu quetschen */
+input[type=time],input[type=date]{padding:10px 8px;font-size:14px;max-width:100%;overflow:hidden;}
 
 /* ── Scale buttons */
 .scale-row{display:flex;gap:6px;}
@@ -97,8 +105,21 @@ input[type=time],input[type=date]{padding:10px 14px;font-size:15px;}
 .event-chip.caff{background:rgba(96,165,250,.1);border-color:rgba(96,165,250,.4);color:var(--accentL);}
 .event-chip.food{background:rgba(253,186,116,.1);border-color:rgba(253,186,116,.4);color:var(--orange);}
 .event-chip.med{background:rgba(192,132,252,.1);border-color:rgba(192,132,252,.4);color:var(--purple);}
+.event-chip.health{background:rgba(148,168,200,.1);border-color:rgba(148,168,200,.3);color:var(--muted);}
 .chip-del{cursor:pointer;opacity:.6;margin-left:3px;font-size:15px;}
 .chips-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+
+/* ── Health checkboxes */
+.health-checks{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+.hcheck{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+  cursor:pointer;border:1.5px solid var(--border);background:rgba(255,255,255,.03);}
+.hcheck.on{background:rgba(148,168,200,.1);border-color:rgba(148,168,200,.4);}
+.hcheck-icon{font-size:18px;min-width:24px;text-align:center;}
+.hcheck-label{font-size:14px;color:var(--muted);flex:1;}
+.hcheck.on .hcheck-label{color:var(--text);}
+.hcheck-box{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+.hcheck.on .hcheck-box{background:rgba(148,168,200,.3);border-color:var(--muted);}
 
 /* ── Preset buttons */
 .preset-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
@@ -132,7 +153,7 @@ input[type=time],input[type=date]{padding:10px 14px;font-size:15px;}
 .insight-text{font-size:13px;color:var(--muted);line-height:1.6;}
 
 /* ── Stat bar */
-.sbar-wrap{height:5px;background:var(--dim);border-radius:4px;overflow:hidden;margin-top:4px;}
+.sbar-wrap{min-height:5px;height:5px;background:var(--dim);border-radius:4px;overflow:hidden;margin-top:4px;}
 .sbar-fill{height:100%;border-radius:4px;}
 
 /* ── Stat mini card */
@@ -146,7 +167,9 @@ input[type=time],input[type=date]{padding:10px 14px;font-size:15px;}
 /* ── Modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:200;display:flex;align-items:flex-end;}
 .sheet{background:var(--surface);border-radius:20px 20px 0 0;width:100%;max-width:430px;margin:0 auto;
-  padding:24px 20px calc(40px + env(safe-area-inset-bottom));border:1px solid var(--border);}
+  padding:24px 20px calc(40px + env(safe-area-inset-bottom));border:1px solid var(--border);
+  max-height:90vh;overflow-y:auto;box-sizing:border-box;}
+.sheet input,.sheet select,.sheet textarea{margin-bottom:2px;}
 .sheet-title{font-size:20px;font-weight:700;margin-bottom:18px;}
 
 /* ── Nav */
@@ -176,10 +199,10 @@ nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-w
 
 /* ── Backup */
 .backup-card{background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.2);border-radius:16px;padding:16px;margin-bottom:10px;}
-.backup-row{display:flex;gap:8px;margin-bottom:8px;}
-.bup-btn{flex:1;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;
+.backup-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+.bup-btn{flex:1;min-width:80px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:12px;
   padding:13px 8px;cursor:pointer;font-family:inherit;color:var(--text);font-size:13px;font-weight:600;
-  display:flex;flex-direction:column;align-items:center;gap:5px;}
+  display:flex;flex-direction:column;align-items:center;gap:5px;box-sizing:border-box;}
 .bup-icon{font-size:24px;}
 .import-area{width:100%;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:12px;
   padding:12px;color:var(--text);font-size:13px;font-family:'Courier New',monospace;outline:none;
@@ -187,14 +210,24 @@ nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-w
 .report-box{font-family:'Courier New',monospace;font-size:12px;line-height:1.8;color:var(--muted);
   white-space:pre-wrap;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px;}
 
-/* ── Seg control (med compare) */
+/* ── Seg control */
 .seg{display:flex;background:var(--dim);border-radius:12px;padding:3px;gap:3px;margin-bottom:12px;}
 .seg-btn{flex:1;padding:8px;border-radius:9px;border:none;cursor:pointer;font-family:inherit;
   font-size:13px;font-weight:600;color:var(--muted);background:transparent;}
 .seg-btn.active{background:var(--card);color:var(--text);}
 
 /* ── Checkin category label */
-.cat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px;display:block;}
+.cat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px;display:block;}
+
+/* ── Vital inline inputs */
+.vital-row{display:grid;gap:8px;margin-top:6px;}
+/* overflow:hidden auf dem Kind-Element zwingt iOS dazu, time/date-Inputs
+   in die Grid-Spalte zu quetschen statt den Container zu sprengen */
+.vital-field{display:flex;flex-direction:column;gap:4px;min-width:0;overflow:hidden;}
+.vital-field label{font-size:11px;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.07em;white-space:normal;word-break:break-word;line-height:1.3;}
+.vital-field input{padding:10px 8px;font-size:14px;min-width:0;width:100%;
+  -webkit-appearance:none;appearance:none;overflow:hidden;}
 </style>
 </head>
 <body>
@@ -202,7 +235,8 @@ nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-w
 <script>
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SK = "adhs_v4";
-const HOURS = Array.from({length:19},(_,i)=>i+5); // 5–23
+// 01–24 Uhr (1–24)
+const HOURS = Array.from({length:24},(_,i)=>i+1);
 
 const MEDS_PRESET = ["Methylphenidat","Elvanse","Ritalin","Concerta","Medikinet","Strattera","Intuniv"];
 
@@ -217,30 +251,30 @@ const METRICS = [
 
 const SCALE_LABELS = ["","Sehr wenig","Wenig","Mittel","Gut","Sehr stark"];
 
-// Event presets – type: pos/neg/caff/food
+const HEALTH_FLAGS = [
+  {id:"verdauung", icon:"🪠", label:"Verdauungsprobleme"},
+  {id:"gelenke",   icon:"🦵", label:"Knie- und Gelenkschmerzen"},
+  {id:"depression",icon:"🌧️", label:"Depressive Gedanken"},
+];
+
 const EV_POS = ["Sehr fokussiert","Im Flow","Sehr motiviert","Entspannt","Gute Laune","Emotional stabil","Organisiert","Sozial präsent","Aufgaben erledigt","Kreativ"];
 const EV_NEG = ["Reizbar","Traurig","Ängstlich","Rebound","Crash","Überwältigt","Aggressiv","Wirkung weg","Herzrasen","Kopfschmerzen","Übelkeit","Schwindel","Mund trocken","Schlafprobleme"];
 const EV_CAFF= ["Kaffee","Matcha","Grüntee","Schwarztee","Energy Drink","Cola"];
 const EV_FOOD= ["Frühstück","Mittagessen","Abendessen","Snack","Süßes","Obst","Proteinreich","Kohlenhydratreich"];
 
-// Colors per event type
 const EV_COLORS = {pos:"var(--green)",neg:"var(--red)",caff:"var(--accentL)",food:"var(--orange)",med:"var(--purple)"};
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function load(){try{return JSON.parse(localStorage.getItem(SK)||"{}");}catch{return {};}}
 function persist(d){try{localStorage.setItem(SK,JSON.stringify(d));}catch{}}
 function todayStr(){return new Date().toISOString().slice(0,10);}
-function nowHour(){return new Date().getHours();}
+function nowHour(){return new Date().getHours()||24;}
 function fmtDate(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});}
 function fmtDateS(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{weekday:"short",day:"numeric",month:"short"});}
 function fmtDateXS(d){const dt=new Date(d+"T12:00");return`${dt.getDate()}.${dt.getMonth()+1}`;}
 function ratingColor(v,inv){const val=inv?6-v:v;if(val<=1)return"#ff7070";if(val===2)return"#fb923c";if(val===3)return"#fcd34d";if(val===4)return"#86efac";return"#4ade80";}
 function getLast7(){const a=[];for(let i=0;i<14;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(d.toISOString().slice(0,10));}return a;}
-
-// Data shape per day:
-// { medication, dosage, takenAt,
-//   checkins: { [hour]: { symptoms:{focus,mood,energy,unrest,impulse,hunger}, events:[{type,label,time?}], note } }
-// }
+function avg(arr){return arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length):null;}
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let S = {
@@ -249,13 +283,20 @@ let S = {
   showMed:false, medForm:{medication:"",dosage:"",takenAt:"",manufacturer:""},
   statsTab:"graph", graphMetrics:["focus","mood","energy"],
   compareMode:false, showImport:false,
+  medViewMode:"day", // day|week|month for compare tab
+  bodyStatsRange:"month", // week|month|year for body stats
 };
 function set(u){Object.assign(S,u);render();}
 
 // ─── DATA ACTIONS ─────────────────────────────────────────────────────────────
 function openCheckin(hour){
-  const ex=S.data[S.selDate]?.checkins?.[hour]||{symptoms:{},events:[],note:""};
-  set({checkinHour:hour,draft:{symptoms:{...ex.symptoms},events:[...(ex.events||[])],note:ex.note||""}});
+  const ex=S.data[S.selDate]?.checkins?.[hour]||{symptoms:{},events:[],note:"",healthFlags:{}};
+  set({checkinHour:hour,draft:{
+    symptoms:{...ex.symptoms},
+    events:[...(ex.events||[])],
+    note:ex.note||"",
+    healthFlags:{...(ex.healthFlags||{})}
+  }});
 }
 function saveCheckin(){
   const d=S.data;
@@ -272,6 +313,12 @@ function saveMed(){
   Object.assign(d[S.selDate],S.medForm);
   S.data=d; persist(d); set({showMed:false});
 }
+function saveVitals(vitals){
+  const d=S.data;
+  if(!d[S.selDate])d[S.selDate]={checkins:{}};
+  Object.assign(d[S.selDate],vitals);
+  S.data=d; persist(d);
+}
 function deleteCheckin(hour){
   const d=S.data;
   if(d[S.selDate]?.checkins?.[hour])delete d[S.selDate].checkins[hour];
@@ -287,12 +334,16 @@ function removeEvent(i){
   render();
 }
 function setSym(id,v){S.draft={...S.draft,symptoms:{...S.draft.symptoms,[id]:v}};render();}
+function toggleHealthFlag(id){
+  const cur=S.draft.healthFlags||{};
+  S.draft={...S.draft,healthFlags:{...cur,[id]:!cur[id]}};
+  render();
+}
 
 // ─── STATS HELPERS ────────────────────────────────────────────────────────────
 function allCheckins(){return Object.keys(S.data).flatMap(d=>Object.values(S.data[d]?.checkins||{}));}
 function avgStat(id){const v=allCheckins().map(c=>c.symptoms?.[id]).filter(Boolean);return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"–";}
 
-// Build timeline data for graph: array of {hour, [metricId]:value, events:[]}
 function buildDayTimeline(date){
   const day=S.data[date]||{};
   return HOURS.map(h=>{
@@ -305,9 +356,9 @@ function buildDayTimeline(date){
   });
 }
 
-// Build multi-day data for trend graph
 function buildTrendData(metricId,days=14){
-  const allDays=Object.keys(S.data).sort().slice(-days);
+  // sorted descending: index 0 = newest (LEFT on graph)
+  const allDays=Object.keys(S.data).sort().reverse().slice(0,days).reverse();
   return allDays.map(date=>{
     const checks=Object.values(S.data[date]?.checkins||{});
     const vals=checks.map(c=>c.symptoms?.[metricId]).filter(Boolean);
@@ -315,7 +366,6 @@ function buildTrendData(metricId,days=14){
   });
 }
 
-// Hourly average across all days
 function hourlyAvg(metricId){
   const byH={};
   Object.keys(S.data).forEach(date=>{
@@ -331,7 +381,6 @@ function getBestHour(){
   return ha.length?ha.reduce((b,h)=>h.avg>b.avg?h:b,ha[0]):null;
 }
 
-// Get all event labels by type across all data
 function eventCounts(){
   const counts={};
   allCheckins().forEach(c=>(c.events||[]).forEach(e=>{
@@ -341,7 +390,18 @@ function eventCounts(){
   return counts;
 }
 
-// Insights
+// ── Body data series (weight, BP) ─────────────────────────────────────────────
+function getBodySeries(rangeKey){
+  const now=new Date();
+  let cutoff=new Date(now);
+  if(rangeKey==="week")cutoff.setDate(now.getDate()-7);
+  else if(rangeKey==="month")cutoff.setMonth(now.getMonth()-1);
+  else cutoff.setFullYear(now.getFullYear()-1);
+  const cutStr=cutoff.toISOString().slice(0,10);
+  return Object.keys(S.data).filter(d=>d>=cutStr).sort();
+}
+
+// ── Insights ──────────────────────────────────────────────────────────────────
 function generateInsights(){
   const ins=[];
   const checks=allCheckins();
@@ -350,12 +410,10 @@ function generateInsights(){
   if(best)ins.push({type:"pos",icon:"🕐",title:`Beste Wirkungszeit: ~${best.hour}:00 Uhr`,
     text:`Dein Fokus-Durchschnitt ist um ${best.hour}:00 am höchsten (${best.avg.toFixed(1)}/5). Das ist dein optimales Wirkungsfenster.`});
 
-  // Rebound check
   const reboundC=checks.filter(c=>(c.events||[]).some(e=>e.type==="neg"&&(e.label.includes("Rebound")||e.label.includes("Wirkung weg")))).length;
   if(reboundC/checks.length>0.2)ins.push({type:"warn",icon:"📉",title:"Häufiger Rebound erkannt",
     text:`Bei ${Math.round(reboundC/checks.length*100)}% der Einträge treten Rebound-Symptome auf. Mögliche Lösungen: Retardpräparat, spätere Einnahme, zweite Dosis mittags – mit deinem Arzt besprechen.`});
 
-  // Koffein-Einfluss
   let wCaff=[],woCaff=[];
   Object.keys(S.data).forEach(date=>{
     const cks=Object.entries(S.data[date]?.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
@@ -371,10 +429,9 @@ function generateInsights(){
     if(Math.abs(diff)>0.4)ins.push({type:diff>0?"pos":"warn",icon:"☕",
       title:diff>0?"Koffein verbessert deinen Fokus":"Koffein könnte stören",
       text:diff>0?`Mit Koffein ist dein Fokus im Schnitt ${diff.toFixed(1)} Punkte höher.`
-        :`Nach Koffein ist dein Fokus im Schnitt ${Math.abs(diff).toFixed(1)} Punkte niedriger. Koffein könnte mit dem Medikament interferieren.`});
+        :`Nach Koffein ist dein Fokus im Schnitt ${Math.abs(diff).toFixed(1)} Punkte niedriger.`});
   }
 
-  // Fokus-Trend
   const trend=buildTrendData("focus",14).filter(t=>t.avg);
   if(trend.length>=5){
     const f3=trend.slice(0,3).reduce((a,b)=>a+b.avg,0)/3;
@@ -383,10 +440,9 @@ function generateInsights(){
     if(Math.abs(diff)>0.3)ins.push({type:diff>0?"pos":"warn",icon:diff>0?"📈":"📊",
       title:diff>0?"Fokus verbessert sich":"Fokus nimmt ab",
       text:diff>0?`Dein Fokus hat sich um Ø +${diff.toFixed(1)} verbessert.`
-        :`Dein Fokus ist um Ø ${diff.toFixed(1)} gesunken. Mögliche Gründe: Toleranzentwicklung oder Dosisanpassung nötig.`});
+        :`Dein Fokus ist um Ø ${diff.toFixed(1)} gesunken.`});
   }
 
-  // Med-Einnahmezeit vs. Wirkungspeak
   const medTimes=Object.keys(S.data).map(d=>S.data[d]?.takenAt).filter(Boolean);
   const avgMedH=medTimes.length?Math.round(medTimes.reduce((s,t)=>s+parseInt(t),0)/medTimes.length):null;
   if(avgMedH&&best&&(best.hour-avgMedH)>3)ins.push({type:"info",icon:"⏰",
@@ -396,149 +452,19 @@ function generateInsights(){
   return ins;
 }
 
-// ─── SVG GRAPH ────────────────────────────────────────────────────────────────
-function buildDayGraph(date,selectedMetrics){
-  const W=360,H=180,PAD={t:10,r:10,b:30,l:28};
-  const gW=W-PAD.l-PAD.r, gH=H-PAD.t-PAD.b;
-  const day=S.data[date]||{};
-  const pts=buildDayTimeline(date);
-
-  // Map hour → x
-  const hMin=5,hMax=23;
-  function xOf(h){return PAD.l+(h-hMin)/(hMax-hMin)*gW;}
-  function yOf(v){return PAD.t+gH-(v-1)/4*gH;} // v: 1–5
-
-  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:320px;overflow:visible;">`;
-
-  // Grid lines Y
-  for(let v=1;v<=5;v++){
-    const y=yOf(v);
-    svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/>`;
-    svg+=`<text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;
-  }
-
-  // Grid lines X (every 2h)
-  for(let h=6;h<=22;h+=2){
-    const x=xOf(h);
-    svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#1e2840" stroke-width="1"/>`;
-    svg+=`<text x="${x}" y="${H-4}" text-anchor="middle" font-size="9" fill="#5a6890">${h}h</text>`;
-  }
-
-  // Medication line
-  if(day.takenAt){
-    const mh=parseFloat(day.takenAt.replace(":","."));
-    const x=xOf(mh);
-    svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#c084fc" stroke-width="2" stroke-dasharray="4,3"/>`;
-    svg+=`<text x="${x+3}" y="${PAD.t+10}" font-size="9" fill="#c084fc">💊 ${day.takenAt}</text>`;
-  }
-
-  // Metric lines
-  selectedMetrics.forEach(mid=>{
-    const m=METRICS.find(x=>x.id===mid);
-    if(!m)return;
-    // collect data points with hours that have data
-    const dp=pts.filter(p=>p[mid]!=null).map(p=>({x:xOf(p.hour),y:yOf(p[mid]),v:p[mid],h:p.hour}));
-    if(dp.length<1)return;
-    // draw line
-    if(dp.length>1){
-      let d=`M${dp[0].x},${dp[0].y}`;
-      for(let i=1;i<dp.length;i++){
-        // smooth curve
-        const mx=(dp[i-1].x+dp[i].x)/2;
-        d+=` C${mx},${dp[i-1].y} ${mx},${dp[i].y} ${dp[i].x},${dp[i].y}`;
-      }
-      svg+=`<path d="${d}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
-    }
-    // dots
-    dp.forEach(pt=>{
-      svg+=`<circle cx="${pt.x}" cy="${pt.y}" r="4" fill="${m.color}" stroke="${S.bg||"#0a0e1a"}" stroke-width="1.5"/>`;
-    });
-  });
-
-  // Events (caffeine, food, pos, neg) as icons on x-axis area
-  const evByHour={};
-  pts.forEach(p=>{if(p.events.length)evByHour[p.hour]=p.events;});
-  Object.entries(evByHour).forEach(([h,evs])=>{
-    const x=xOf(+h);
-    const icons=evs.slice(0,3).map(e=>e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•");
-    icons.forEach((ic,i)=>{
-      svg+=`<text x="${x+(i-icons.length/2+0.5)*12}" y="${PAD.t+gH+22}" text-anchor="middle" font-size="11">${ic}</text>`;
-    });
-  });
-
-  svg+="</svg>";
-  return svg;
-}
-
-// Multi-day trend graph
-function buildTrendGraph(metricId,days=14){
-  const W=360,H=130,PAD={t:8,r:10,b:24,l:28};
-  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
-  const data=buildTrendData(metricId,days).filter((t,i,a)=>a.length<=14);
-  const m=METRICS.find(x=>x.id===metricId);
-  if(!data.length||!m)return"";
-
-  function xOf(i){return PAD.l+(i/(data.length-1||1))*gW;}
-  function yOf(v){return PAD.t+gH-((v-1)/4)*gH;}
-
-  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
-  // Y grid
-  for(let v=1;v<=5;v+=2){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
-
-  const valid=data.map((d,i)=>({...d,i})).filter(d=>d.avg!=null);
-  if(valid.length>1){
-    let path=`M${xOf(valid[0].i)},${yOf(valid[0].avg)}`;
-    for(let k=1;k<valid.length;k++){
-      const mx=(xOf(valid[k-1].i)+xOf(valid[k].i))/2;
-      path+=` C${mx},${yOf(valid[k-1].avg)} ${mx},${yOf(valid[k].avg)} ${xOf(valid[k].i)},${yOf(valid[k].avg)}`;
-    }
-    // fill area
-    const fillPath=path+` L${xOf(valid[valid.length-1].i)},${PAD.t+gH} L${xOf(valid[0].i)},${PAD.t+gH} Z`;
-    svg+=`<path d="${fillPath}" fill="${m.color}" opacity="0.12"/>`;
-    svg+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
-  }
-  valid.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)}" r="3.5" fill="${m.color}"/>`;});
-
-  // X labels (every other)
-  data.forEach((d,i)=>{if(i%2===0||i===data.length-1)svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#5a6890">${fmtDateXS(d.date)}</text>`;});
-
-  svg+="</svg>";
-  return svg;
-}
-
-// Hourly avg graph (across all days)
-function buildHourlyGraph(metricId){
-  const W=360,H=130,PAD={t:8,r:10,b:24,l:28};
-  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
-  const data=hourlyAvg(metricId);
-  const m=METRICS.find(x=>x.id===metricId);
-  if(!m)return"";
-
-  function xOf(i){return PAD.l+(i/(data.length-1))*gW;}
-  function yOf(v){return PAD.t+gH-((v-1)/4)*gH;}
-
-  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
-  for(let v=1;v<=5;v+=2){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
-
-  const valid=data.map((d,i)=>({...d,i})).filter(d=>d.avg!=null);
-  if(valid.length>1){
-    let path=`M${xOf(valid[0].i)},${yOf(valid[0].avg)}`;
-    for(let k=1;k<valid.length;k++){const mx=(xOf(valid[k-1].i)+xOf(valid[k].i))/2;path+=` C${mx},${yOf(valid[k-1].avg)} ${mx},${yOf(valid[k].avg)} ${xOf(valid[k].i)},${yOf(valid[k].avg)}`;}
-    svg+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
-  }
-  valid.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)}" r="3.5" fill="${m.color}"/>`;});
-  data.forEach((d,i)=>{if(d.hour%2===0)svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#5a6890">${d.hour}h</text>`;});
-  svg+="</svg>";
-  return svg;
-}
-
-// Medication comparison
-function buildMedCompareData(){
+function buildMedCompareData(mode="day"){
   const medGroups={};
+  // Group by week or month if needed
+  function groupKey(date,med){
+    if(mode==="week"){const d=new Date(date+"T12:00");const wk=Math.ceil(d.getDate()/7);return`${med} W${wk}/${d.getMonth()+1}`;}
+    if(mode==="month"){const d=new Date(date+"T12:00");return`${med} ${d.toLocaleDateString("de-DE",{month:"short",year:"numeric"})}`;}
+    return med;
+  }
   Object.keys(S.data).forEach(date=>{
     const d=S.data[date];
     if(!d?.medication)return;
-    const key=`${d.medication} ${d.dosage}${d.manufacturer?" ("+d.manufacturer+")":""}`.trim();
+    const medName=`${d.medication} ${d.dosage}${d.manufacturer?" ("+d.manufacturer+")":""}`.trim();
+    const key=groupKey(date,medName);
     if(!medGroups[key])medGroups[key]={days:[],focusVals:[],moodVals:[],energyVals:[],negEvents:0,posEvents:0,totalCheckins:0};
     medGroups[key].days.push(date);
     Object.values(d.checkins||{}).forEach(c=>{
@@ -562,6 +488,187 @@ function buildMedCompareData(){
   }));
 }
 
+// ─── SVG GRAPH ────────────────────────────────────────────────────────────────
+function buildDayGraph(date,selectedMetrics){
+  const W=360,ICON_H=22,H=190,PAD={t:ICON_H+14,r:10,b:28,l:28};
+  const gW=W-PAD.l-PAD.r, gH=H-PAD.t-PAD.b;
+  const day=S.data[date]||{};
+  const pts=buildDayTimeline(date);
+
+  const hMin=1,hMax=24;
+  function xOf(h){return PAD.l+(h-hMin)/(hMax-hMin)*gW;}
+  function yOf(v){return PAD.t+gH-(v-1)/4*gH;}
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:320px;overflow:visible;">`;
+
+  // Y grid
+  for(let v=1;v<=5;v++){
+    const y=yOf(v);
+    svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/>`;
+    svg+=`<text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;
+  }
+  // X grid
+  for(let h=4;h<=24;h+=4){
+    const x=xOf(h);
+    svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#1e2840" stroke-width="1"/>`;
+    svg+=`<text x="${x}" y="${H-4}" text-anchor="middle" font-size="9" fill="#5a6890">${h}h</text>`;
+  }
+
+  // Medication line
+  if(day.takenAt){
+    const mh=parseFloat(day.takenAt.replace(":","."));
+    const x=xOf(mh);
+    svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#c084fc" stroke-width="2" stroke-dasharray="4,3"/>`;
+    svg+=`<text x="${x+3}" y="${PAD.t+10}" font-size="9" fill="#c084fc">💊 ${day.takenAt}</text>`;
+  }
+
+  // Metric lines
+  selectedMetrics.forEach(mid=>{
+    const m=METRICS.find(x=>x.id===mid);
+    if(!m)return;
+    const dp=pts.filter(p=>p[mid]!=null).map(p=>({x:xOf(p.hour),y:yOf(p[mid]),v:p[mid],h:p.hour}));
+    if(dp.length<1)return;
+    if(dp.length>1){
+      let d=`M${dp[0].x},${dp[0].y}`;
+      for(let i=1;i<dp.length;i++){
+        const mx=(dp[i-1].x+dp[i].x)/2;
+        d+=` C${mx},${dp[i-1].y} ${mx},${dp[i].y} ${dp[i].x},${dp[i].y}`;
+      }
+      svg+=`<path d="${d}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
+    }
+    dp.forEach(pt=>{
+      svg+=`<circle cx="${pt.x}" cy="${pt.y}" r="4" fill="${m.color}" stroke="#0a0e1a" stroke-width="1.5"/>`;
+    });
+  });
+
+  // Event icons at TOP (above graph area)
+  const evByHour={};
+  pts.forEach(p=>{if(p.events.length)evByHour[p.hour]=p.events;});
+  Object.entries(evByHour).forEach(([h,evs])=>{
+    const x=xOf(+h);
+    const icons=evs.slice(0,3).map(e=>e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•");
+    icons.forEach((ic,i)=>{
+      svg+=`<text x="${x+(i-icons.length/2+0.5)*12}" y="${ICON_H-2}" text-anchor="middle" font-size="11">${ic}</text>`;
+    });
+  });
+
+  svg+="</svg>";
+  return svg;
+}
+
+// Multi-day trend graph – index 0 = neuestes (links), rechts = älter
+function buildTrendGraph(metricId,days=14){
+  const W=360,H=130,PAD={t:8,r:10,b:24,l:28};
+  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
+  // data: newest first → displayed left; reversed for display so index 0 is oldest on x
+  const dataRaw=buildTrendData(metricId,days);// already newest-first from buildTrendData
+  // We want to display newest on LEFT: index 0 = newest
+  const data=[...dataRaw].reverse(); // now index 0 = newest (left)
+  const m=METRICS.find(x=>x.id===metricId);
+  if(!data.length||!m)return"";
+
+  function xOf(i){return PAD.l+(i/(data.length-1||1))*gW;}
+  function yOf(v){return PAD.t+gH-((v-1)/4)*gH;}
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  for(let v=1;v<=5;v+=2){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
+
+  const valid=data.map((d,i)=>({...d,i})).filter(d=>d.avg!=null);
+  if(valid.length>1){
+    let path=`M${xOf(valid[0].i)},${yOf(valid[0].avg)}`;
+    for(let k=1;k<valid.length;k++){
+      const mx=(xOf(valid[k-1].i)+xOf(valid[k].i))/2;
+      path+=` C${mx},${yOf(valid[k-1].avg)} ${mx},${yOf(valid[k].avg)} ${xOf(valid[k].i)},${yOf(valid[k].avg)}`;
+    }
+    const fillPath=path+` L${xOf(valid[valid.length-1].i)},${PAD.t+gH} L${xOf(valid[0].i)},${PAD.t+gH} Z`;
+    svg+=`<path d="${fillPath}" fill="${m.color}" opacity="0.12"/>`;
+    svg+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
+  }
+  valid.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)}" r="3.5" fill="${m.color}"/>`;});
+
+  // X labels: index 0 = newest on left
+  data.forEach((d,i)=>{if(i%2===0||i===data.length-1)svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#5a6890">${fmtDateXS(d.date)}</text>`;});
+  // Label arrows
+  if(data.length>1){
+    svg+=`<text x="${PAD.l}" y="${H-2}" text-anchor="start" font-size="8" fill="#3a4860">◄ neu</text>`;
+    svg+=`<text x="${W-PAD.r}" y="${H-2}" text-anchor="end" font-size="8" fill="#3a4860">alt ►</text>`;
+  }
+
+  svg+="</svg>";
+  return svg;
+}
+
+// Generic XY trend graph for body metrics (weight, BP)
+function buildBodyGraph(series,yMin,yMax,rangeKey){
+  const W=360,H=140,PAD={t:8,r:10,b:24,l:36};
+  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
+  const dates=getBodySeries(rangeKey);
+  if(dates.length<2)return"";
+
+  function xOf(i){return PAD.l+(i/(dates.length-1))*gW;}
+  function yOf(v){return PAD.t+gH-((v-yMin)/(yMax-yMin))*gH;}
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  // Y gridlines
+  const steps=4;
+  for(let s=0;s<=steps;s++){
+    const v=yMin+(yMax-yMin)*s/steps;
+    const y=yOf(v);
+    svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/>`;
+    svg+=`<text x="${PAD.l-3}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${Math.round(v)}</text>`;
+  }
+  // X labels
+  dates.forEach((d,i)=>{
+    if(dates.length<=10||i%(Math.ceil(dates.length/6))===0||i===dates.length-1)
+      svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#5a6890">${fmtDateXS(d)}</text>`;
+  });
+
+  series.forEach(({key,color,dayKey})=>{
+    const pts=dates.map((d,i)=>{
+      const v=S.data[d]?.[dayKey||key];
+      return v!=null?{i,v:+v}:null;
+    }).filter(Boolean);
+    if(pts.length<1)return;
+    if(pts.length>1){
+      let path=`M${xOf(pts[0].i)},${yOf(pts[0].v)}`;
+      for(let k=1;k<pts.length;k++){
+        const mx=(xOf(pts[k-1].i)+xOf(pts[k].i))/2;
+        path+=` C${mx},${yOf(pts[k-1].v)} ${mx},${yOf(pts[k].v)} ${xOf(pts[k].i)},${yOf(pts[k].v)}`;
+      }
+      svg+=`<path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`;
+    }
+    pts.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.v)}" r="3" fill="${color}"/>`;});
+  });
+
+  svg+="</svg>";
+  return svg;
+}
+
+function buildHourlyGraph(metricId){
+  const W=360,H=130,PAD={t:8,r:10,b:24,l:28};
+  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
+  const data=hourlyAvg(metricId);
+  const m=METRICS.find(x=>x.id===metricId);
+  if(!m)return"";
+
+  function xOf(i){return PAD.l+(i/(data.length-1))*gW;}
+  function yOf(v){return PAD.t+gH-((v-1)/4)*gH;}
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  for(let v=1;v<=5;v+=2){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
+
+  const valid=data.map((d,i)=>({...d,i})).filter(d=>d.avg!=null);
+  if(valid.length>1){
+    let path=`M${xOf(valid[0].i)},${yOf(valid[0].avg)}`;
+    for(let k=1;k<valid.length;k++){const mx=(xOf(valid[k-1].i)+xOf(valid[k].i))/2;path+=` C${mx},${yOf(valid[k-1].avg)} ${mx},${yOf(valid[k].avg)} ${xOf(valid[k].i)},${yOf(valid[k].avg)}`;}
+    svg+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2.5" stroke-linecap="round"/>`;
+  }
+  valid.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)}" r="3.5" fill="${m.color}"/>`;});
+  data.forEach((d,i)=>{if(d.hour%4===0)svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="8" fill="#5a6890">${d.hour}h</text>`;});
+  svg+="</svg>";
+  return svg;
+}
+
 // ─── DOM HELPERS ─────────────────────────────────────────────────────────────
 function el(tag,attrs,...kids){
   const e=document.createElement(tag);
@@ -569,13 +676,20 @@ function el(tag,attrs,...kids){
     if(k==="class")e.className=v;
     else if(k==="style"&&typeof v==="object")Object.assign(e.style,v);
     else if(k.startsWith("on"))e.addEventListener(k.slice(2).toLowerCase(),v);
-    else if(k==="html")e.innerHTML=v;
+    // NOTE: "html" attr intentionally removed – use svgEl() for trusted SVG only
     else e.setAttribute(k,v);
   });
-  kids.flat().forEach(c=>{if(c==null)return;e.appendChild(typeof c==="string"||typeof c==="number"?document.createTextNode(c):c);});
+  kids.flat().forEach(c=>{
+    if(c==null)return;
+    if(typeof c==="string"||typeof c==="number")
+      e.appendChild(document.createTextNode(String(c)));
+    else
+      e.appendChild(c);
+  });
   return e;
 }
-function svgEl(html){const d=el("div",{html});return d;}
+// svgEl: only for internally generated, trusted SVG strings (never user input)
+function svgEl(html){const d=document.createElement("div");d.innerHTML=html;return d;}
 function showToast(msg){const t=el("div",{class:"toast"},msg);document.body.appendChild(t);setTimeout(()=>t.remove(),2100);}
 
 // ─── BACKUP ───────────────────────────────────────────────────────────────────
@@ -592,11 +706,18 @@ function buildReport(){
   ];
   allDays.slice(0,7).forEach(date=>{
     const d=S.data[date];
-    lines.push(`\n${fmtDateS(date)}${d?.medication?` – ${d.medication} ${d.dosage}${d.manufacturer?" ("+d.manufacturer+")":""}`:""}`);
+    let dayLine=`\n${fmtDateS(date)}`;
+    if(d?.medication)dayLine+=` – ${d.medication} ${d.dosage}${d.manufacturer?" ("+d.manufacturer+")":""}`;
+    if(d?.aufgestandenAt)dayLine+=` | Aufgest.:${d.aufgestandenAt}`;
+    if(d?.schlafenAt)dayLine+=` | Schlafen:${d.schlafenAt}`;
+    if(d?.gewicht)dayLine+=` | Gewicht:${d.gewicht}kg`;
+    if(d?.sys)dayLine+=` | RR:${d.sys}/${d.dia} P:${d.puls}`;
+    lines.push(dayLine);
     Object.entries(d?.checkins||{}).sort((a,b)=>+a[0]-+b[0]).forEach(([h,c])=>{
       const syms=METRICS.filter(m=>c.symptoms?.[m.id]).map(m=>`${m.icon}${c.symptoms[m.id]}`).join(" ");
       const evs=(c.events||[]).map(e=>(e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":e.type==="neg"?"⚠️":"•")+e.label).join(", ");
-      lines.push(`  ${h}:00 ${syms}${evs?" | "+evs:""}${c.note?" – "+c.note:""}`);
+      const hf=Object.entries(c.healthFlags||{}).filter(([,v])=>v).map(([id])=>HEALTH_FLAGS.find(f=>f.id===id)?.label||id).join(", ");
+      lines.push(`  ${h}:00 ${syms}${evs?" | "+evs:""}${hf?" | "+hf:""}${c.note?" – "+c.note:""}`);
     });
   });
   return lines.filter(l=>l!==undefined).join("\n");
@@ -604,7 +725,23 @@ function buildReport(){
 function copyReport(){const t=buildReport();if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>showToast("✓ Bericht kopiert!")).catch(()=>prompt("Kopieren:",t));else prompt("Kopieren:",t);}
 function exportMail(){const b=encodeURIComponent(buildReport());const s=encodeURIComponent(`ADHS Protokoll – ${new Date().toLocaleDateString("de-DE")}`);window.location.href=`mailto:?subject=${s}&body=${b}`;}
 function exportJSON(){const j=JSON.stringify(S.data,null,2);const b=new Blob([j],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download=`adhs-backup-${todayStr()}.json`;a.click();URL.revokeObjectURL(u);}
-function importJSON(str){try{const p=JSON.parse(str);if(typeof p!=="object")throw 0;S.data=p;persist(p);set({showImport:false});showToast("✓ Daten wiederhergestellt!");}catch{alert("Ungültiges Backup-Format.");}}
+function importJSON(str){
+  try{
+    if(!str||!str.trim())throw new Error("empty");
+    const p=JSON.parse(str);
+    // Muss ein echtes Objekt sein (kein Array, kein null, kein Primitiv)
+    if(typeof p!=="object"||p===null||Array.isArray(p))throw new Error("invalid structure");
+    // Grobe Plausibilitätsprüfung: Schlüssel sollten datums-artige Strings sein
+    const keys=Object.keys(p);
+    if(keys.length>0){
+      const sample=keys[0];
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(sample))throw new Error("unexpected key format");
+    }
+    S.data=p;persist(p);set({showImport:false});showToast("✓ Daten wiederhergestellt!");
+  }catch(err){
+    alert("Ungültiges Backup-Format. Bitte eine gültige ADHS-Tagebuch JSON-Datei einfügen.\n("+err.message+")");
+  }
+}
 
 // ─── VIEWS ────────────────────────────────────────────────────────────────────
 
@@ -621,7 +758,6 @@ function renderCheckin(){
     return wrap;
   }
 
-  // Topbar
   wrap.appendChild(el("div",{class:"topbar"},
     el("div",{style:{display:"flex",alignItems:"center",gap:"10px"}},
       el("button",{class:"btn ghost sm",style:{width:"auto"},onClick:()=>set({checkinHour:null,draft:null})},"← Zurück"),
@@ -638,7 +774,7 @@ function renderCheckin(){
     ...METRICS.map(m=>{
       const val=draft.symptoms[m.id]||0;
       const col=val?ratingColor(val,m.inv):"var(--muted)";
-      const row=el("div",{style:{marginBottom:"18px"}},
+      return el("div",{style:{marginBottom:"18px"}},
         el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}},
           el("span",{style:{fontSize:"15px",fontWeight:"600"}},`${m.icon} ${m.label}`),
           val?el("span",{style:{fontSize:"13px",color:col,fontWeight:"700"}},SCALE_LABELS[val]):null
@@ -647,33 +783,29 @@ function renderCheckin(){
           ...[1,2,3,4,5].map(v=>{
             const c=ratingColor(v,m.inv);
             const active=val===v;
-            const b=el("button",{class:"scale-btn",
+            return el("button",{class:"scale-btn",
               style:active?{background:c+"33",borderColor:c,color:c}:{},
               onClick:()=>setSym(m.id,v)
             },String(v));
-            return b;
           })
         ),
         m.inv?el("div",{style:{fontSize:"11px",color:"var(--muted)",marginTop:"5px"}},`1 = wenig ${m.label} · 5 = sehr viel`):null
       );
-      return row;
     })
   ));
 
   // ── Ereignisse
   function makeEventSection(type,title,presets){
     const items=draft.events.filter(e=>e.type===type);
-    const colorCls=type;
-    const section2=el("div",{style:{marginBottom:"6px"}},
+    return el("div",{style:{marginBottom:"6px"}},
       el("span",{class:"cat-label"},title),
       el("div",{class:"preset-wrap"},
         ...presets.map(p=>el("button",{class:"preset-btn",onClick:()=>addEvent(type,p)},p))
       ),
-      el("div",{style:{display:"flex",gap:"8px",marginBottom:"6px"}},
+      el("div",{style:{display:"flex",gap:"8px",marginBottom:"6px",alignItems:"stretch"}},
         (()=>{
           const inp=document.createElement("input");
-          inp.placeholder="Eigenes eingeben …";
-          inp.style.flex="1";
+          inp.placeholder="Eigenes eingeben …";inp.style.flex="1";inp.style.minWidth="0";
           inp.onkeydown=e=>{if(e.key==="Enter"&&inp.value){addEvent(type,inp.value);inp.value="";}};
           return inp;
         })(),
@@ -681,13 +813,12 @@ function renderCheckin(){
           onClick(e){const inp=e.target.previousSibling;if(inp.value){addEvent(type,inp.value);inp.value="";}}},"＋")
       ),
       items.length?el("div",{class:"chips-wrap"},
-        ...items.map((ev,i)=>el("span",{class:`event-chip ${ev.type}`},
+        ...items.map((ev)=>el("span",{class:`event-chip ${ev.type}`},
           ev.label,
           el("span",{class:"chip-del",onClick:()=>removeEvent(draft.events.indexOf(ev))},"×")
         ))
       ):null
     );
-    return section2;
   }
 
   sec.appendChild(el("div",{class:"card"},
@@ -696,6 +827,23 @@ function renderCheckin(){
     makeEventSection("neg","⚠️ Negative Effekte / Nebenwirkungen",EV_NEG),
     makeEventSection("caff","☕ Koffein & Tee",EV_CAFF),
     makeEventSection("food","🍽️ Essen",EV_FOOD),
+  ));
+
+  // ── Gesundheitliche Besonderheiten (neutral, kein Score-Einfluss)
+  sec.appendChild(el("div",{class:"card"},
+    el("span",{class:"card-label"},"🩺 Gesundheitliche Besonderheiten"),
+    el("div",{style:{fontSize:"12px",color:"var(--muted)",marginBottom:"10px"}},"Fließt nicht in die Bewertung ein – nur zur Dokumentation."),
+    el("div",{class:"health-checks"},
+      ...HEALTH_FLAGS.map(f=>{
+        const on=!!(draft.healthFlags||{})[f.id];
+        const chip=el("div",{class:"hcheck"+(on?" on":""),onClick:()=>toggleHealthFlag(f.id)},
+          el("div",{class:"hcheck-icon"},f.icon),
+          el("div",{class:"hcheck-label"},f.label),
+          el("div",{class:"hcheck-box"},on?"✓":"")
+        );
+        return chip;
+      })
+    )
   ));
 
   // ── Notiz
@@ -767,7 +915,6 @@ function renderToday(){
   const date=S.selDate, day=S.data[date]||{}, checkins=day.checkins||{};
   const wrap=el("div",{});
 
-  // Date strip
   const last7=getLast7();
   const strip=el("div",{class:"date-strip"},
     ...last7.map(d=>{
@@ -835,6 +982,55 @@ function renderToday(){
     )
   ));
 
+  // ── Vitaldaten des Tages (Schlaf / Gewicht / Blutdruck)
+  const vCard=el("div",{class:"card"});
+  vCard.appendChild(el("span",{class:"card-label"},"🩺 Vitaldaten"));
+
+  function vInput(label,type,stateKey,placeholder,unit){
+    const row=el("div",{class:"vital-field"});
+    const lbl=document.createElement("label");
+    lbl.textContent=label+(unit?" ("+unit+")":"");
+    const inp=document.createElement("input");
+    inp.type=type||"text";
+    inp.placeholder=placeholder||"";
+    inp.value=day[stateKey]||"";
+    // iOS Safari: width+minWidth+overflow erzwingen korrektes Grid-Verhalten
+    inp.style.cssText="width:100%;min-width:0;max-width:100%;overflow:hidden;box-sizing:border-box;";
+    inp.oninput=e=>{
+      const upd={};upd[stateKey]=e.target.value;
+      saveVitals(upd);
+      S.data[date]=S.data[date]||{checkins:{}};
+      S.data[date][stateKey]=e.target.value;
+    };
+    row.appendChild(lbl);row.appendChild(inp);
+    return row;
+  }
+
+  // Schlaf
+  vCard.appendChild(el("div",{class:"cat-label"},"😴 Schlaf"));
+  vCard.appendChild(el("div",{class:"row2"},
+    vInput("Aufgestanden","time","aufgestandenAt",""),
+    vInput("Schlafen gegangen","time","schlafenAt","")
+  ));
+
+  // Gewicht
+  vCard.appendChild(el("div",{class:"cat-label"},"⚖️ Gewicht"));
+  vCard.appendChild(el("div",{class:"row2"},
+    vInput("Gewicht","number","gewicht","z.B. 78.5","kg"),
+    vInput("Uhrzeit","time","gewichtTime","")
+  ));
+
+  // Blutdruck
+  vCard.appendChild(el("div",{class:"cat-label"},"❤️ Blutdruck"));
+  vCard.appendChild(el("div",{class:"vital-row",style:{gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))"}},
+    vInput("Systole","number","sys","120","mmHg"),
+    vInput("Diastole","number","dia","80","mmHg"),
+    vInput("Puls","number","puls","70","bpm"),
+    vInput("Uhrzeit","time","bpTime","")
+  ));
+
+  sec.appendChild(vCard);
+
   // Entry list
   const entries=Object.entries(checkins).sort((a,b)=>+a[0]-+b[0]);
   if(entries.length){
@@ -848,10 +1044,14 @@ function renderToday(){
         const evChips=(c.events||[]).map(e=>el("span",{class:`event-chip ${e.type}`,style:{fontSize:"11px",padding:"2px 8px"}},
           (e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":"⚠️")+" "+e.label
         ));
+        const hfChips=Object.entries(c.healthFlags||{}).filter(([,v])=>v).map(([id])=>{
+          const f=HEALTH_FLAGS.find(f=>f.id===id);
+          return f?el("span",{class:"event-chip health",style:{fontSize:"11px",padding:"2px 8px"}},f.icon+" "+f.label):null;
+        }).filter(Boolean);
         return el("div",{class:"entry-row",onClick:()=>openCheckin(+h)},
           el("div",{class:"entry-time"},h+":00"),
           el("div",{style:{flex:"1"}},
-            el("div",{class:"entry-tags"},...tags,...evChips),
+            el("div",{class:"entry-tags"},...tags,...evChips,...hfChips),
             c.note?el("div",{class:"entry-note"},c.note):null
           )
         );
@@ -892,14 +1092,17 @@ function renderHistory(){
         el("div",{},
           el("div",{style:{fontWeight:"600",fontSize:"15px"}},fmtDateS(date)),
           d?.medication?el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},`💊 ${d.medication} ${d.dosage}${d.manufacturer?" · "+d.manufacturer:""}${d.takenAt?" · "+d.takenAt+"h":""}`)
-          :el("div",{style:{fontSize:"12px",color:"var(--dim)"}})
+          :el("div",{style:{fontSize:"12px",color:"var(--dim)"}}),
+          // vitals summary
+          (d?.gewicht||d?.sys)?el("div",{style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},
+            [d.gewicht?`⚖️ ${d.gewicht}kg`:"",d.sys?`❤️ ${d.sys}/${d.dia} ${d.puls}bpm`:""].filter(Boolean).join("  ")
+          ):null
         ),
         dayAvg?el("div",{style:{textAlign:"center"}},
           el("div",{style:{fontSize:"22px",fontWeight:"800",color:ratingColor(+dayAvg,false)}},dayAvg),
           el("div",{style:{fontSize:"9px",color:"var(--muted)"}},"Ø Fokus")
         ):null
       ),
-      // mini bar chart
       el("div",{style:{display:"flex",alignItems:"flex-end",gap:"3px",height:"24px",marginBottom:"6px"}},
         ...HOURS.map(h=>{const c=d?.checkins?.[h];const f=c?.symptoms?.focus;
           return el("div",{style:{flex:"1",borderRadius:"3px",minHeight:"3px",height:f?`${(f/5)*22}px`:"3px",
@@ -931,13 +1134,18 @@ function renderStats(){
     wrap.appendChild(sec);return wrap;
   }
 
-  // Sub-tabs
-  const TABS=[{id:"graph",label:"📈 Graph"},{id:"insights",label:"💡 Schlüsse"},{id:"compare",label:"💊 Vergleich"},{id:"events",label:"🔍 Ereignisse"},{id:"backup",label:"💾 Backup"}];
+  const TABS=[
+    {id:"graph",label:"📈 Graph"},
+    {id:"body",label:"🩺 Körper"},
+    {id:"insights",label:"💡 Schlüsse"},
+    {id:"compare",label:"💊 Vergleich"},
+    {id:"events",label:"🔍 Ereignisse"},
+    {id:"backup",label:"💾 Backup"}
+  ];
   sec.appendChild(el("div",{class:"stat-tabs"},...TABS.map(t=>el("button",{class:"stat-tab"+(S.statsTab===t.id?" active":""),onClick:()=>set({statsTab:t.id})},t.label))));
 
   // ── GRAPH TAB
   if(S.statsTab==="graph"){
-    // Metric toggles
     const toggleWrap=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"6px",marginBottom:"12px"}},
       ...METRICS.map(m=>el("button",{
         class:"btn sm"+(S.graphMetrics.includes(m.id)?" active":" ghost-sm"),
@@ -950,12 +1158,10 @@ function renderStats(){
     );
     sec.appendChild(toggleWrap);
 
-    // Day selector for graph
     const last7=getLast7();
-    const dayGraph=el("div",{class:"card"},
+    sec.appendChild(el("div",{class:"card"},
       el("span",{class:"card-label"},`Tagesgraph – ${S.selDate===todayStr()?"Heute":fmtDateS(S.selDate)}`),
-      el("div",{class:"graph-wrap",html:buildDayGraph(S.selDate,S.graphMetrics)}),
-      // Legend
+      (()=>{const gw=el("div",{class:"graph-wrap"});gw.appendChild(svgEl(buildDayGraph(S.selDate,S.graphMetrics)));return gw;})(),
       el("div",{class:"graph-legend"},
         ...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),
         el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme")),
@@ -970,13 +1176,11 @@ function renderStats(){
           },`${dt.getDate()}.${dt.getMonth()+1}`);
         })
       )
-    );
-    sec.appendChild(dayGraph);
+    ));
 
-    // Trend charts per selected metric
     if(Object.keys(S.data).length>=3){
       sec.appendChild(el("div",{class:"card"},
-        el("span",{class:"card-label"},"Verlauf über Zeit (Ø pro Tag)"),
+        el("span",{class:"card-label"},"Verlauf über Zeit – neueste links"),
         ...S.graphMetrics.map(mid=>{
           const m=METRICS.find(x=>x.id===mid);
           return el("div",{style:{marginBottom:"16px"}},
@@ -999,6 +1203,106 @@ function renderStats(){
     }
   }
 
+  // ── BODY TAB (Körperdaten Langzeitverlauf)
+  if(S.statsTab==="body"){
+    // Range toggle
+    const ranges=[["week","7 Tage"],["month","30 Tage"],["year","12 Monate"]];
+    sec.appendChild(el("div",{class:"seg"},
+      ...ranges.map(([k,l])=>el("button",{class:"seg-btn"+(S.bodyStatsRange===k?" active":""),onClick:()=>set({bodyStatsRange:k})},l))
+    ));
+
+    // Weight graph
+    const wDates=getBodySeries(S.bodyStatsRange).filter(d=>S.data[d]?.gewicht);
+    if(wDates.length>=2){
+      const vals=wDates.map(d=>+S.data[d].gewicht);
+      const wMin=Math.floor(Math.min(...vals)-1),wMax=Math.ceil(Math.max(...vals)+1);
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"⚖️ Körpergewicht (kg)"),
+        svgEl(buildBodyGraph([{key:"gewicht",color:"#60a5fa"}],wMin,wMax,S.bodyStatsRange))
+      ));
+    } else {
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"⚖️ Körpergewicht"),
+        el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Noch keine Gewichtsdaten. Trage täglich dein Gewicht in den Vitaldaten ein.")
+      ));
+    }
+
+    // Blood pressure graph
+    const bpDates=getBodySeries(S.bodyStatsRange).filter(d=>S.data[d]?.sys);
+    if(bpDates.length>=2){
+      const sysVals=bpDates.map(d=>+S.data[d].sys);
+      const diaVals=bpDates.map(d=>+S.data[d].dia);
+      const pulseVals=bpDates.filter(d=>S.data[d]?.puls).map(d=>+S.data[d].puls);
+      const allV=[...sysVals,...diaVals,...pulseVals];
+      const bpMin=Math.floor(Math.min(...allV)-5),bpMax=Math.ceil(Math.max(...allV)+5);
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"❤️ Blutdruck & Puls"),
+        svgEl(buildBodyGraph([
+          {key:"sys",color:"#ff7070"},
+          {key:"dia",color:"#fdba74"},
+          {key:"puls",color:"#c084fc"},
+        ],bpMin,bpMax,S.bodyStatsRange)),
+        el("div",{class:"graph-legend"},
+          el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"#ff7070"}}),el("span",{},"Systole")),
+          el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"#fdba74"}}),el("span",{},"Diastole")),
+          el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"#c084fc"}}),el("span",{},"Puls"))
+        )
+      ));
+    } else {
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"❤️ Blutdruck & Puls"),
+        el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Noch keine Blutdruckdaten. Trage täglich deine Werte in den Vitaldaten ein.")
+      ));
+    }
+
+    // Schlaf overview
+    const sleepDays=getBodySeries(S.bodyStatsRange).filter(d=>S.data[d]?.aufgestandenAt||S.data[d]?.schlafenAt);
+    if(sleepDays.length){
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"😴 Schlafzeiten"),
+        el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},
+          ...sleepDays.slice(-10).reverse().map(d=>{
+            const day=S.data[d];
+            return el("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"13px",padding:"6px 0",borderBottom:"1px solid var(--border)"}},
+              el("span",{style:{color:"var(--muted)"}},fmtDateXS(d)),
+              el("span",{},
+                day.schlafenAt?`🌙 ${day.schlafenAt}`:"",
+                " → ",
+                day.aufgestandenAt?`☀️ ${day.aufgestandenAt}`:""
+              )
+            );
+          })
+        )
+      ));
+    }
+
+    // Health flags summary
+    const hfCounts={};
+    Object.keys(S.data).forEach(d=>{
+      Object.values(S.data[d]?.checkins||{}).forEach(c=>{
+        Object.entries(c.healthFlags||{}).forEach(([id,v])=>{if(v)hfCounts[id]=(hfCounts[id]||0)+1;});
+      });
+    });
+    const anyFlags=HEALTH_FLAGS.some(f=>hfCounts[f.id]);
+    if(anyFlags){
+      sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"🩺 Gesundheitliche Besonderheiten – Häufigkeit"),
+        el("div",{style:{display:"flex",flexDirection:"column",gap:"10px"}},
+          ...HEALTH_FLAGS.filter(f=>hfCounts[f.id]).map(f=>el("div",{},
+            el("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"14px",marginBottom:"4px"}},
+              el("span",{},f.icon+" "+f.label),
+              el("span",{style:{color:"var(--muted)"}},hfCounts[f.id]+"×")
+            ),
+            el("div",{class:"sbar-wrap"},el("div",{class:"sbar-fill",style:{
+              width:`${Math.min(hfCounts[f.id]/Math.max(...Object.values(hfCounts))*100,100)}%`,
+              background:"var(--muted)"
+            }}))
+          ))
+        )
+      ));
+    }
+  }
+
   // ── INSIGHTS TAB
   if(S.statsTab==="insights"){
     const ins=generateInsights();
@@ -1008,7 +1312,6 @@ function renderStats(){
       el("div",{class:`insight-title ${i.type}`},i.title),
       el("div",{class:"insight-text"},i.text)
     )));
-    // Ø stats
     sec.appendChild(el("div",{class:"card"},
       el("span",{class:"card-label"},"Ø Gesamtwerte"),
       el("div",{class:"row3"},
@@ -1024,7 +1327,14 @@ function renderStats(){
 
   // ── COMPARE TAB
   if(S.statsTab==="compare"){
-    const medData=buildMedCompareData();
+    // View mode switcher
+    sec.appendChild(el("div",{class:"seg"},
+      ...[["day","Täglich"],["week","Wöchentlich"],["month","Monatlich"]].map(([k,l])=>
+        el("button",{class:"seg-btn"+(S.medViewMode===k?" active":""),onClick:()=>set({medViewMode:k})},l)
+      )
+    ));
+
+    const medData=buildMedCompareData(S.medViewMode);
     if(medData.length<2){
       sec.appendChild(el("div",{style:{textAlign:"center",padding:"40px 0",color:"var(--muted)"}},
         "Erfasse mindestens 2 verschiedene Medikamente/Dosierungen für einen Vergleich."
@@ -1053,10 +1363,9 @@ function renderStats(){
         })
       ));
     }
-    // Compare graph
     if(medData.length>=1&&Object.keys(S.data).length>=3){
       sec.appendChild(el("div",{class:"card"},
-        el("span",{class:"card-label"},"Fokus-Verlauf (alle Tage)"),
+        el("span",{class:"card-label"},"Fokus-Verlauf – neueste links"),
         svgEl(buildTrendGraph("focus",30))
       ));
     }
