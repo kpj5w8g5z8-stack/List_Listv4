@@ -230,6 +230,7 @@ nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-w
 <div id="print-report-overlay"></div>
 <script>
 const SK="focuslog_v1";
+const SETTINGS_KEY="focuslog_settings";
 const HOURS=Array.from({length:24},(_,i)=>i+1);
 
 const METRICS=[
@@ -286,25 +287,25 @@ const EV_COLORS={pos:"var(--green)",neg:"var(--red)",caff:"var(--accentL)",food:
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function load(){
   try{
-    const cur=JSON.parse(localStorage.getItem(SK)||"{}");
-    // PERMANENTE MIGRATION & MERGE: adhs_v4 → focuslog_v1
-    // Trigger: adhs_v4 existiert und ist NICHT leer ("{}")
+    let cur=JSON.parse(localStorage.getItem(SK)||"{}");
+    
+    // Entschachtelung falls Daten im alten Fehler-Format festsitzen
+    if(cur.data && !cur["2025-"] && !cur["2026-"]){
+      cur=cur.data;
+    }
+    
+    // PERMANENTE MIGRATION AUS DER VORWOCHE (adhs_v4)
     const OLD_KEY="adhs_v4";
     let oldRaw;
     try{oldRaw=JSON.parse(localStorage.getItem(OLD_KEY)||"{}");}catch{oldRaw={};}
+    if(oldRaw && oldRaw.data){ oldRaw = oldRaw.data; }
+    
     const oldHasData=oldRaw&&typeof oldRaw==="object"&&Object.keys(oldRaw).length>0;
     if(oldHasData){
-      // Merge data-Objekte (Tageseinträge): alte Einträge werden durch neue überschrieben falls gleicher Tag
-      const mergedData={...(oldRaw.data||oldRaw),...(cur.data||{})};
-      // Merge settings: alte als Basis, neue überschreiben
-      const mergedSettings=Object.assign({},(oldRaw.settings||{}),(cur.settings||{}));
-      // Zusammengeführtes Objekt aufbauen
-      const merged={...cur,data:mergedData,settings:mergedSettings};
-      // Im aktuellen Schlüssel sichern
-      try{localStorage.setItem(SK,JSON.stringify(merged));}catch{}
-      // Alten Schlüssel auf "{}" setzen, damit Migration nicht erneut triggert
+      const mergedData={...oldRaw,...cur};
+      try{localStorage.setItem(SK,JSON.stringify(mergedData));}catch{}
       try{localStorage.setItem(OLD_KEY,JSON.stringify({}));}catch{}
-      return merged;
+      return mergedData;
     }
     return cur;
   }catch{return{};}
@@ -319,12 +320,34 @@ function ratingColor(v,inv){const val=inv?6-v:v;if(val<=1)return"#ff7070";if(val
 function getLast7(){const a=[];for(let i=0;i<14;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(d.toISOString().slice(0,10));}return a;}
 function avg(arr){return arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length):null;}
 
-// Settings helpers
-function loadSettings(){try{return JSON.parse(localStorage.getItem(SK+"_settings")||"{}");}catch{return{};}}
-function saveSettings(s){try{localStorage.setItem(SK+"_settings",JSON.stringify(s));}catch{}}
-function getMeds(){const s=loadSettings();return s.meds||["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"];}
-function getManufacturers(){const s=loadSettings();return s.manufacturers||["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"];}
-function getTreatmentStatus(){return loadSettings().treatmentStatus||null;}// null|"unbehandelt"|"ohne_meds"
+// Settings helpers - sauber ausgelagert
+function loadSettings(){
+  try{
+    let s=localStorage.getItem(SETTINGS_KEY);
+    if(!s){
+      // Fallback Migration aus alten Keys
+      try{
+        const oldRaw=JSON.parse(localStorage.getItem("adhs_v4")||"{}");
+        const curRaw=JSON.parse(localStorage.getItem(SK)||"{}");
+        const foundSettings=curRaw.settings||oldRaw.settings;
+        if(foundSettings){
+          localStorage.setItem(SETTINGS_KEY,JSON.stringify(foundSettings));
+          s=JSON.stringify(foundSettings);
+        }
+      }catch(e){}
+    }
+    const parsed=JSON.parse(s||"{}");
+    if(!parsed.meds)parsed.meds=["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"];
+    if(!parsed.manufacturers)parsed.manufacturers=["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"];
+    return parsed;
+  }catch{
+    return {meds:["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"],manufacturers:["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"]};
+  }
+}
+function saveSettings(s){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));}catch{}}
+function getMeds(){const s=loadSettings();return s.meds;}
+function getManufacturers(){const s=loadSettings();return s.manufacturers;}
+function getTreatmentStatus(){return loadSettings().treatmentStatus||null;}
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let S={
