@@ -287,18 +287,24 @@ const EV_COLORS={pos:"var(--green)",neg:"var(--red)",caff:"var(--accentL)",food:
 function load(){
   try{
     const cur=JSON.parse(localStorage.getItem(SK)||"{}");
-    // Migrate old keys if current store is empty
-    if(!Object.keys(cur).length){
-      const oldKeys=["adhs_v4","adhs_tracker_v3","adhs_v3"];
-      for(const k of oldKeys){
-        try{
-          const old=JSON.parse(localStorage.getItem(k)||"{}");
-          if(Object.keys(old).length){
-            localStorage.setItem(SK,JSON.stringify(old));
-            return old;
-          }
-        }catch{}
-      }
+    // PERMANENTE MIGRATION & MERGE: adhs_v4 → focuslog_v1
+    // Trigger: adhs_v4 existiert und ist NICHT leer ("{}")
+    const OLD_KEY="adhs_v4";
+    let oldRaw;
+    try{oldRaw=JSON.parse(localStorage.getItem(OLD_KEY)||"{}");}catch{oldRaw={};}
+    const oldHasData=oldRaw&&typeof oldRaw==="object"&&Object.keys(oldRaw).length>0;
+    if(oldHasData){
+      // Merge data-Objekte (Tageseinträge): alte Einträge werden durch neue überschrieben falls gleicher Tag
+      const mergedData={...(oldRaw.data||oldRaw),...(cur.data||{})};
+      // Merge settings: alte als Basis, neue überschreiben
+      const mergedSettings=Object.assign({},(oldRaw.settings||{}),(cur.settings||{}));
+      // Zusammengeführtes Objekt aufbauen
+      const merged={...cur,data:mergedData,settings:mergedSettings};
+      // Im aktuellen Schlüssel sichern
+      try{localStorage.setItem(SK,JSON.stringify(merged));}catch{}
+      // Alten Schlüssel auf "{}" setzen, damit Migration nicht erneut triggert
+      try{localStorage.setItem(OLD_KEY,JSON.stringify({}));}catch{}
+      return merged;
     }
     return cur;
   }catch{return{};}
