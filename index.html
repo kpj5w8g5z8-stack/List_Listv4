@@ -284,7 +284,25 @@ const SLEEP_TAGS=[
 const EV_COLORS={pos:"var(--green)",neg:"var(--red)",caff:"var(--accentL)",food:"var(--orange)",med:"var(--purple)"};
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-function load(){try{return JSON.parse(localStorage.getItem(SK)||"{}");}catch{return{};}}
+function load(){
+  try{
+    const cur=JSON.parse(localStorage.getItem(SK)||"{}");
+    // Migrate old keys if current store is empty
+    if(!Object.keys(cur).length){
+      const oldKeys=["adhs_v4","adhs_tracker_v3","adhs_v3"];
+      for(const k of oldKeys){
+        try{
+          const old=JSON.parse(localStorage.getItem(k)||"{}");
+          if(Object.keys(old).length){
+            localStorage.setItem(SK,JSON.stringify(old));
+            return old;
+          }
+        }catch{}
+      }
+    }
+    return cur;
+  }catch{return{};}
+}
 function persist(d){try{localStorage.setItem(SK,JSON.stringify(d));}catch{}}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function nowHour(){return new Date().getHours()||24;}
@@ -299,13 +317,14 @@ function avg(arr){return arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length):null;}
 function loadSettings(){try{return JSON.parse(localStorage.getItem(SK+"_settings")||"{}");}catch{return{};}}
 function saveSettings(s){try{localStorage.setItem(SK+"_settings",JSON.stringify(s));}catch{}}
 function getMeds(){const s=loadSettings();return s.meds||["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"];}
+function getManufacturers(){const s=loadSettings();return s.manufacturers||["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"];}
 function getTreatmentStatus(){return loadSettings().treatmentStatus||null;}// null|"unbehandelt"|"ohne_meds"
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let S={
   tab:"today",data:load(),selDate:todayStr(),
   checkinHour:null,draft:null,saved:false,
-  showMed:false,medForm:{medication:"Elvanse",dosage:"",takenAt:""},
+  showMed:false,medForm:{medication:"Elvanse",dosage:"",takenAt:"",manufacturer:""},
   showSettings:false,
   statsTab:"graph",graphMetrics:["focus","mood","energy"],
   compareMode:false,showImport:false,
@@ -345,6 +364,7 @@ function saveMed(){
     medication:S.medForm.medication,
     dosage:S.medForm.dosage,
     takenAt:S.medForm.takenAt,
+    manufacturer:S.medForm.manufacturer||"",
     isBaseline:isBaseline||false,
   });
   S.data=d;persist(d);set({showMed:false});
@@ -539,7 +559,7 @@ function generateInsights(){
   Object.keys(S.data).forEach(date=>{
     const cks=Object.entries(S.data[date]?.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
     cks.forEach(([,c],i)=>{
-      const hasCaff=cks.slice(Math.max(0,i-2),i).some(([,p])=>(p.events||[]).some(e=>e.type==="caff"));
+      const hasCaff=cks.slice(Math.max(0,i-5),i).some(([,p])=>(p.events||[]).some(e=>e.type==="caff"));
       if(c.symptoms?.focus){hasCaff?wCaff.push(c.symptoms.focus):woCaff.push(c.symptoms.focus);}
     });
   });
@@ -804,7 +824,10 @@ function buildReportData(){
     const medH=parseFloat(d.takenAt.replace(":","."));
     const cEntries=Object.entries(d.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
     const reboundEntry=cEntries.find(([h,c])=>+h>medH&&(c.events||[]).some(e=>e.type==="neg"&&(e.label.includes("Rebound")||e.label.includes("Wirkung weg"))));
-    if(reboundEntry)wirkDauern.push(+reboundEntry[0]-medH);
+    if(reboundEntry){
+      const dur=+reboundEntry[0]-medH;
+      if(dur>=2&&dur<=12)wirkDauern.push(dur);
+    }
   });
   const avgWirkDauer=wirkDauern.length?(wirkDauern.reduce((a,b)=>a+b,0)/wirkDauern.length).toFixed(1):null;
 
@@ -847,16 +870,17 @@ function buildReportData(){
     if(nextFocus.length&&duration>2&&duration<14){sleepFocusPairs.push({sleep:duration,focus:nextFocus.reduce((a,b)=>a+b,0)/nextFocus.length});}
   });
   let sleepCorr=null;
-  if(sleepFocusPairs.length>=3){
-    const n=sleepFocusPairs.length;
-    const ms=sleepFocusPairs.reduce((a,p)=>a+p.sleep,0)/n;
-    const mf=sleepFocusPairs.reduce((a,p)=>a+p.focus,0)/n;
+  const sfN=sleepFocusPairs.length;
+  if(sfN>=14){
+    const ms=sleepFocusPairs.reduce((a,p)=>a+p.sleep,0)/sfN;
+    const mf=sleepFocusPairs.reduce((a,p)=>a+p.focus,0)/sfN;
     const num=sleepFocusPairs.reduce((a,p)=>a+(p.sleep-ms)*(p.focus-mf),0);
     const den=Math.sqrt(sleepFocusPairs.reduce((a,p)=>a+(p.sleep-ms)**2,0)*sleepFocusPairs.reduce((a,p)=>a+(p.focus-mf)**2,0));
     sleepCorr=den>0?(num/den).toFixed(2):null;
   }
   // Sleep-tag → focus Pearson
   const sleepTagCorrs={};
+  const sleepTagCorrNs={};
   SLEEP_TAGS.forEach(tag=>{
     const pairs=[];
     sortedDays.forEach((date,i)=>{
@@ -865,7 +889,8 @@ function buildReportData(){
       const nextFocus=avg(Object.values(S.data[nextDate]?.checkins||{}).map(c=>c.symptoms?.focus).filter(Boolean));
       if(nextFocus!=null)pairs.push({x:hasTag?1:0,y:nextFocus});
     });
-    if(pairs.length>=3){
+    sleepTagCorrNs[tag.id]=pairs.length;
+    if(pairs.length>=14){
       const n=pairs.length;
       const mx=pairs.reduce((a,p)=>a+p.x,0)/n;
       const my=pairs.reduce((a,p)=>a+p.y,0)/n;
@@ -902,18 +927,19 @@ function buildReportData(){
   const baselineDayCount=getBaselineDays().length;
   return{today,allDays,totalCheckins,startWeight,currentWeight,weightDiff,avgSys,avgDia,avgPuls,bpDays,
     avgWirkDauer,wirkDauern,avgFMed,avgFNoMed:compareBase,fokusDiff,reboundMin,reboundMax,reboundAvg,reboundHours,
-    sleepCorr,avgSleepDur,sleepFocusPairs,sleepTagCorrs,hungerCorr,hungerUnrestPairs,topFlags,currentMed,baselineDayCount};
+    sleepCorr,avgSleepDur,sleepFocusPairs,sleepTagCorrs,sleepTagCorrNs,hungerCorr,hungerUnrestPairs,topFlags,currentMed,baselineDayCount};
 }
 
 function buildReport(){
   const r=buildReportData();
   const na="k. A.";
   function pct(v){return v!==null?`${v>0?"+":""}${v}%`:na;}
-  function corr(v){
+  function corr(v,n){
+    if(n!==undefined&&n<14)return`Statistischer Trend wird ab 14 erfassten Tagen berechnet (Aktuell: n = ${n})`;
     if(v===null)return na;
-    const n=+v;const dir=n>0?"positiv":"negativ";
-    const stärke=Math.abs(n)<0.2?"sehr schwach":Math.abs(n)<0.4?"schwach":Math.abs(n)<0.6?"moderat":"stark";
-    return`r = ${v} (${stärke}, ${dir})`;
+    const num=+v;const dir=num>0?"positiv":"negativ";
+    const stärke=Math.abs(num)<0.2?"sehr schwach":Math.abs(num)<0.4?"schwach":Math.abs(num)<0.6?"moderat":"stark";
+    return`r = ${v} (${stärke}, ${dir})${n!==undefined?" (n = "+n+")":""}`;
   }
   const lines=[
 `FocusLog – TAGESVERLAUF-PROTOKOLL
@@ -932,9 +958,9 @@ ${"═".repeat(60)}
 `  Rebound-Zeitfenster: ${r.reboundHours.length?`${r.reboundMin}:00–${r.reboundMax}:00 Uhr (Ø ${r.reboundAvg}:00)`:na}`,
 `
 ━━━ SEKTION 3 – SCHLAF & TRIGGER`,
-`  Schlaf → Fokus Folgetag: ${corr(r.sleepCorr)}  (Ø ${r.avgSleepDur?r.avgSleepDur+" h":na}, n=${r.sleepFocusPairs.length})`,
-...SLEEP_TAGS.map(t=>`  ${t.label} → Fokus: ${corr(r.sleepTagCorrs?.[t.id]||null)}`),
-`  Hunger → Unruhe: ${corr(r.hungerCorr)}  (n=${r.hungerUnrestPairs.length})`,
+`  Schlaf → Fokus Folgetag: ${corr(r.sleepCorr,r.sleepFocusPairs.length)}  (Ø ${r.avgSleepDur?r.avgSleepDur+" h":na}, n=${r.sleepFocusPairs.length})`,
+...SLEEP_TAGS.map(t=>`  ${t.label} → Fokus: ${corr(r.sleepTagCorrs?.[t.id]??null,r.sleepTagCorrNs?.[t.id]??0)}`),
+`  Hunger → Unruhe: ${corr(r.hungerCorr,r.hungerUnrestPairs.length)}  (n=${r.hungerUnrestPairs.length})`,
 `
 ━━━ TOP HEALTH FLAGS`,
 ...(r.topFlags.length?r.topFlags.map((f,i)=>`  ${i+1}. ${f.label}: ${f.pct}% (${f.count}×)`):["  Keine Health-Flags erfasst."]),
@@ -946,7 +972,7 @@ ${"═".repeat(60)}
 function printReport(){
   const r=buildReportData();const na="k. A.";
   function pct(v){return v!==null?`${v>0?"+":""}${v}%`:na;}
-  function corr(v){if(v===null)return na;const n=+v;const stärke=Math.abs(n)<0.2?"sehr schwach":Math.abs(n)<0.4?"schwach":Math.abs(n)<0.6?"moderat":"stark";const dir=n>0?"positiv":"negativ";return`r = ${v} (${stärke}, ${dir})`;}
+  function corr(v,n){if(n!==undefined&&n<14)return`Trend ab 14 Tagen (n=${n})`;if(v===null)return na;const num=+v;const stärke=Math.abs(num)<0.2?"sehr schwach":Math.abs(num)<0.4?"schwach":Math.abs(num)<0.6?"moderat":"stark";const dir=num>0?"positiv":"negativ";return`r = ${v} (${stärke}, ${dir})${n!==undefined?" (n="+n+")":""}`;}
   function row(label,value){return`<div class="pr-kv"><div class="pr-label">${label}</div><div class="pr-value">${value}</div></div>`;}
   const html=`
     <h1>FocusLog – Tagesverlauf-Protokoll</h1>
@@ -961,9 +987,9 @@ function printReport(){
     <div class="pr-row">${row("Ø Fokus MIT Med",r.avgFMed?r.avgFMed.toFixed(1)+"/5":na)}${row("Ø Fokus Baseline",r.avgFNoMed?r.avgFNoMed.toFixed(1)+"/5":na)}${row("Fokus-Differenz",r.fokusDiff!==null?pct(r.fokusDiff)+(r.fokusDiff>0?" ↑ wirksam":r.fokusDiff<0?" ↓ kein Effekt":""):na)}</div>
     <hr class="pr-divider">
     <h2>Sektion 3 – Schlaf &amp; Trigger</h2>
-    <div class="pr-row">${row("Schlaf → Fokus",corr(r.sleepCorr))}${row("Ø Schlafdauer",r.avgSleepDur?r.avgSleepDur+" h":na)}${row("Datenpunkte",r.sleepFocusPairs.length)}</div>
-    ${SLEEP_TAGS.map(t=>`<div class="pr-row">${row(t.label+" → Fokus",corr(r.sleepTagCorrs?.[t.id]||null))}</div>`).join("")}
-    <div class="pr-row">${row("Hunger → Unruhe",corr(r.hungerCorr))}${row("Datenpunkte",r.hungerUnrestPairs.length)}</div>
+    <div class="pr-row">${row("Schlaf → Fokus",corr(r.sleepCorr,r.sleepFocusPairs.length))}${row("Ø Schlafdauer",r.avgSleepDur?r.avgSleepDur+" h":na)}${row("Datenpunkte",r.sleepFocusPairs.length)}</div>
+    ${SLEEP_TAGS.map(t=>`<div class="pr-row">${row(t.label+" → Fokus",corr(r.sleepTagCorrs?.[t.id]??null,r.sleepTagCorrNs?.[t.id]??0))}</div>`).join("")}
+    <div class="pr-row">${row("Hunger → Unruhe",corr(r.hungerCorr,r.hungerUnrestPairs.length))}${row("Datenpunkte",r.hungerUnrestPairs.length)}</div>
     <div style="margin-top:8pt"><div class="pr-label" style="margin-bottom:5pt">TOP HEALTH FLAGS</div>
     ${r.topFlags.length?`<ul class="pr-list">`+r.topFlags.map((f,i)=>`<li>${i+1}. ${f.label}: <strong>${f.pct}%</strong> (${f.count}×)</li>`).join("")+`</ul>`:`<span style="color:#888">Keine Health-Flags erfasst.</span>`}</div>
     <div class="pr-note">Bericht von FocusLog – ${r.today}<br>Kein Ersatz für ärztliche Diagnose oder medizinische Beratung.</div>
@@ -1164,6 +1190,13 @@ function renderMedModal(){
   const f=S.medForm;
   const meds=getMeds();
 
+  const mfrs=getManufacturers();
+  const mfrSelect=document.createElement("select");
+  const mfrDefault=document.createElement("option");
+  mfrDefault.value="";mfrDefault.textContent="— Hersteller wählen —";mfrSelect.appendChild(mfrDefault);
+  mfrs.forEach(mf=>{const o=document.createElement("option");o.value=mf;o.textContent=mf;if(f.manufacturer===mf)o.selected=true;mfrSelect.appendChild(o);});
+  mfrSelect.onchange=e=>{S.medForm.manufacturer=e.target.value;};
+
   const medSelect=document.createElement("select");
   meds.forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;if(f.medication===m)o.selected=true;medSelect.appendChild(o);});
   const customOpt=document.createElement("option");customOpt.value="";customOpt.textContent="— Anderes —";medSelect.appendChild(customOpt);
@@ -1197,6 +1230,8 @@ function renderMedModal(){
     el("div",{class:"sheet-title"},"💊 Medikament"),
     el("span",{class:"card-label"},"Medikament (aus Liste)"),
     medSelect,
+    el("span",{class:"card-label",style:{marginTop:"10px"}},"Hersteller"),
+    mfrSelect,
     el("span",{class:"card-label",style:{marginTop:"10px"}},"Oder freie Eingabe"),
     customInp,
     el("span",{class:"card-label",style:{marginTop:"10px"}},"Dosis (mg)"),
@@ -1244,6 +1279,34 @@ function renderSettingsModal(){
           saveSettings(s);newMedInp.value="";render();
         }},"＋")
     ),
+    el("span",{class:"card-label",style:{marginTop:"20px"}},"🏭 Herstellerliste"),
+    (()=>{
+      const mfrs=getManufacturers();
+      return el("div",{},
+        el("div",{},
+          ...mfrs.map((mf,i)=>el("div",{class:"med-list-item"},
+            el("div",{class:"med-list-label"},mf),
+            el("button",{class:"med-del-btn",onClick:()=>{
+              const s=loadSettings();
+              s.manufacturers=(s.manufacturers||getManufacturers()).filter((_,j)=>j!==i);
+              saveSettings(s);render();
+            }},"−")
+          ))
+        ),
+        (()=>{
+          const inp=document.createElement("input");inp.placeholder="Neuer Hersteller …";
+          const wrap2=el("div",{style:{display:"flex",gap:"8px",marginTop:"8px"}},inp,
+            el("button",{class:"btn sm ghost-sm",style:{width:"auto",flexShrink:"0"},
+              onClick:()=>{
+                const val=inp.value.trim();if(!val)return;
+                const s=loadSettings();s.manufacturers=[...getManufacturers(),val];
+                saveSettings(s);inp.value="";render();
+              }},"＋")
+          );
+          return wrap2;
+        })()
+      );
+    })(),
     el("span",{class:"card-label",style:{marginTop:"20px"}},"Behandlungsstatus"),
     el("div",{style:{fontSize:"12px",color:"var(--muted)",marginBottom:"10px"}},"Medikationsfreie Tage werden als Baseline-Kontrollgruppe verwendet."),
     el("div",{class:"treatment-opts"},
@@ -1286,7 +1349,7 @@ function renderToday(){
   const isBaseline=day.isBaseline;
   const medBtn=el("button",{
     class:"med-btn"+(day.medication?" has-med":""),
-    onClick:()=>{S.medForm={medication:day.medication||"Elvanse",dosage:day.dosage||"",takenAt:day.takenAt||"",isBaseline:day.isBaseline||false};set({showMed:true});}
+    onClick:()=>{S.medForm={medication:day.medication||"Elvanse",dosage:day.dosage||"",takenAt:day.takenAt||"",manufacturer:day.manufacturer||"",isBaseline:day.isBaseline||false};set({showMed:true});}
   },day.medication?`💊 ${day.medication} ${day.dosage}${isBaseline?"":" "}${isBaseline?"":""}`:
     getTreatmentStatus()?"+ Medikament / Baseline":"+ Medikament");
   if(isBaseline&&day.medication){
