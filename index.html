@@ -229,6 +229,12 @@ nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-w
 .mode-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:10px;
   font-size:11px;font-weight:700;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);
   color:var(--accentL);margin-bottom:10px;}
+/* View toggle button */
+.view-toggle-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:20px;
+  font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+  background:#1e2840;border:1.5px solid var(--border);color:var(--muted);
+  transition:background .15s,border-color .15s;}
+.view-toggle-btn:active{background:#253050;border-color:var(--accent);color:var(--accentL);}
 /* Treatment checkboxes */
 .treatment-check-row{display:flex;gap:8px;flex-direction:column;margin-bottom:8px;}
 .tcheck{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;cursor:pointer;
@@ -448,12 +454,12 @@ function loadSettings(){
     const parsed=JSON.parse(s||"{}");
     if(!parsed.meds)parsed.meds=["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"];
     if(!parsed.manufacturers)parsed.manufacturers=["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"];
-    if(parsed.advancedView===undefined)parsed.advancedView=false;
+    if(parsed.advancedView===undefined)parsed.advancedView=true;
     if(!parsed.treatmentInfo)parsed.treatmentInfo={therapy:false,medication:false};
     return parsed;
   }catch{
     return {meds:["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"],
-      manufacturers:["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"],advancedView:false,
+      manufacturers:["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"],advancedView:true,
       treatmentInfo:{therapy:false,medication:false}};
   }
 }
@@ -462,6 +468,30 @@ function getMeds(){return loadSettings().meds;}
 function getManufacturers(){return loadSettings().manufacturers;}
 function getTreatmentStatus(){return loadSettings().treatmentStatus||null;}
 function isAdvanced(){return loadSettings().advancedView===true;}
+
+// ─── VIEW TOGGLE ──────────────────────────────────────────────────────────────
+let isAdvancedView = loadSettings().advancedView !== false; // true by default
+
+function toggleAdvancedView(){
+  isAdvancedView = !isAdvancedView;
+  const s = loadSettings();
+  s.advancedView = isAdvancedView;
+  saveSettings(s);
+
+  // Update button label
+  const btn = document.getElementById('viewToggleBtn');
+  if(btn){
+    document.getElementById('toggleIcon').textContent = isAdvancedView ? '🔵' : '🟢';
+    document.getElementById('toggleText').textContent = isAdvancedView ? 'Advanced-View' : 'Normal-Ansicht';
+  }
+
+  // Show/hide .advanced-only elements
+  document.querySelectorAll('.advanced-only').forEach(el => {
+    el.style.display = isAdvancedView ? 'block' : 'none';
+  });
+
+  render();
+}
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let S={
@@ -1319,7 +1349,7 @@ function renderCheckin(){
         },label);
       })
     ),
-    draft.schlafschlecht?el("div",{class:"sleep-subtags"},
+    draft.schlafschlecht?el("div",{class:"sleep-subtags advanced-only"},
       el("div",{style:{fontSize:"11px",color:"var(--accentL)",marginBottom:"8px"}},"Was hat den Schlaf gestört?"),
       el("div",{class:"ctx-strip",style:{marginBottom:"0"}},
         ...SLEEP_TAGS.map(t=>el("button",{class:"ctx-tag"+(draft.sleepTags?.[t.id]?" on":""),onClick:()=>toggleSleepTag(t.id)},t.label))
@@ -1377,8 +1407,8 @@ function renderCheckin(){
         return inp;
       })()
     ):null,
-    // Schmerz-Lokalisation
-    (draft.healthFlags?.gelenke)?el("div",{class:"pain-local"},
+    // Schmerz-Lokalisation (advanced only)
+    (draft.healthFlags?.gelenke&&adv)?el("div",{class:"pain-local advanced-only"},
       el("div",{class:"pain-local-title"},"📍 Schmerzlokalisation"),
       el("div",{class:"preset-wrap"},
         ...PAIN_LOCATIONS.map(loc=>{
@@ -1637,8 +1667,13 @@ function renderToday(){
 
   const sec=el("div",{class:"section"});
 
-  // Mode badge
-  sec.appendChild(el("div",{class:"mode-badge"},adv?"🔬 Advanced-Ansicht":"🟢 Normal-Ansicht"));
+  // Mode badge / View Toggle Button
+  const toggleBtn = document.createElement('button');
+  toggleBtn.id = 'viewToggleBtn';
+  toggleBtn.className = 'view-toggle-btn';
+  toggleBtn.setAttribute('onclick', 'toggleAdvancedView()');
+  toggleBtn.innerHTML = `<span id="toggleIcon">${adv ? '🔵' : '🟢'}</span> <span id="toggleText">${adv ? 'Advanced-View' : 'Normal-Ansicht'}</span>`;
+  sec.appendChild(toggleBtn);
 
   // Pause-Day button
   sec.appendChild(el("button",{
@@ -1700,12 +1735,14 @@ function renderToday(){
   vCard.appendChild(sleepRow);
   if(shCalc)vCard.appendChild(el("div",{style:{fontSize:"12px",color:"var(--accentL)",marginTop:"4px",marginBottom:"4px"}},`🌙 Schlafdauer: ${shCalc.toFixed(1)}h`));
   if(adv){
-    vCard.appendChild(el("div",{class:"cat-label"},"⚖️ Gewicht"));
-    vCard.appendChild(vInput("Gewicht (kg)","number","gewicht","z.B. 78.5",""));
-    vCard.appendChild(el("div",{class:"cat-label"},"❤️ Blutdruck & Puls"));
-    vCard.appendChild(el("div",{class:"vital-row",style:{gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))"}},
+    const advVitals = el("div",{class:"advanced-only"});
+    advVitals.appendChild(el("div",{class:"cat-label"},"⚖️ Gewicht"));
+    advVitals.appendChild(vInput("Gewicht (kg)","number","gewicht","z.B. 78.5",""));
+    advVitals.appendChild(el("div",{class:"cat-label"},"❤️ Blutdruck & Puls"));
+    advVitals.appendChild(el("div",{class:"vital-row",style:{gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))"}},
       vInput("Systole","number","sys","120",""),vInput("Diastole","number","dia","80",""),vInput("Puls","number","puls","70","")
     ));
+    vCard.appendChild(advVitals);
   }
   sec.appendChild(vCard);
 
@@ -1851,7 +1888,7 @@ function renderStats(){
       )
     ));
     if(adv&&Object.keys(S.data).length>=3){
-      sec.appendChild(el("div",{class:"card"},
+      const advGraph1=el("div",{class:"card advanced-only"},
         el("span",{class:"card-label"},"Verlauf + Schlaf-Overlay"),
         el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"8px"}},"Gestrichelte lila Linie = Schlafdauer (Skala 0–12h überlagert)"),
         ...S.graphMetrics.slice(0,2).map(mid=>{
@@ -1861,8 +1898,9 @@ function renderStats(){
             svgEl(buildTrendGraph(mid,14,true))
           );
         })
-      ));
-      sec.appendChild(el("div",{class:"card"},
+      );
+      sec.appendChild(advGraph1);
+      const advGraph2=el("div",{class:"card advanced-only"},
         el("span",{class:"card-label"},"Ø Wirkungsverlauf über den Tag"),
         ...S.graphMetrics.map(mid=>{
           const m=METRICS.find(x=>x.id===mid);
@@ -1871,7 +1909,8 @@ function renderStats(){
             svgEl(buildHourlyGraph(mid))
           );
         })
-      ));
+      );
+      sec.appendChild(advGraph2);
     }
   }
 
@@ -2085,7 +2124,7 @@ function renderStats(){
         el("div",{class:"view-switch-label"},settings.advancedView?"🔬 Advanced-Ansicht":"🟢 Normal-Ansicht"),
         (()=>{
           const track=el("div",{class:"toggle-track"+(settings.advancedView?" on":"")},el("div",{class:"toggle-thumb"}));
-          track.addEventListener("click",()=>{const s=loadSettings();s.advancedView=!s.advancedView;saveSettings(s);render();});
+          track.addEventListener("click",()=>toggleAdvancedView());
           return track;
         })()
       ),
