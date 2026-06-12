@@ -1228,6 +1228,11 @@ function renderMedModal(){
       })(),
       el("span",{class:"card-label",style:{marginTop:"12px"}},"⚖️ Gewicht"),
       el("div",{class:"row2"},vInp("Gewicht","number","gewicht","kg"),vInp("Uhrzeit","time","gewichtTime")),
+      el("span",{class:"card-label",style:{marginTop:"12px"}},"❤️ Blutdruck & Puls"),
+      el("div",{class:"vital-row",style:{gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))"}},
+        vInp("Systole","number","sys","mmHg"),vInp("Diastole","number","dia","mmHg"),
+        vInp("Puls","number","puls","bpm"),vInp("Uhrzeit","time","bpTime")
+      ),
     ),
     el("button",{class:"btn primary",style:{marginTop:"16px"},onClick:saveMed},"Speichern"),
     el("button",{class:"btn ghost",onClick:()=>set({showMed:false})},"Abbrechen")
