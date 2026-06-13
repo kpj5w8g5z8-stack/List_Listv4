@@ -337,33 +337,38 @@ function migrateV1(old){
   return out;
 }
 
+function lsGet(key){ try{ return localStorage.getItem(key); }catch{ return null; } }
+function lsSet(key,val){ try{ localStorage.setItem(key,val); }catch{} }
+
 function load(){
-  const v2r=localStorage.getItem(SK);
-  if(v2r){ try{ return JSON.parse(v2r); }catch{} }
-  let v1=null;
-  for(const key of ['focuslog_v1','adhs_v4','adhs_tracker_v3','adhs_v3']){
-    const raw=localStorage.getItem(key); if(!raw) continue;
-    try{
-      let p=JSON.parse(raw);
-      if(p.data) p=p.data;
-      if(typeof p==='object' && Object.keys(p).some(k=>/^\d{4}/.test(k)))
-        v1={...p,...(v1||{})};
-    }catch{}
-  }
-  if(!v1) return {};
-  const v2=migrateV1(v1);
-  try{ localStorage.setItem(SK,JSON.stringify(v2)); }catch{}
-  return v2;
+  try{
+    const v2r=lsGet(SK);
+    if(v2r){ try{ return JSON.parse(v2r); }catch{} }
+    let v1=null;
+    for(const key of ['focuslog_v1','adhs_v4','adhs_tracker_v3','adhs_v3']){
+      const raw=lsGet(key); if(!raw) continue;
+      try{
+        let p=JSON.parse(raw);
+        if(p.data) p=p.data;
+        if(typeof p==='object' && Object.keys(p).some(k=>/^\d{4}/.test(k)))
+          v1={...p,...(v1||{})};
+      }catch{}
+    }
+    if(!v1) return {};
+    const v2=migrateV1(v1);
+    lsSet(SK,JSON.stringify(v2));
+    return v2;
+  }catch(e){ console.warn('FocusLog load error:',e); return {}; }
 }
 
 function persist(){
-  try{ localStorage.setItem(SK,JSON.stringify(S.data)); }catch{ alert('Speicher voll!'); }
+  try{ lsSet(SK,JSON.stringify(S.data)); }catch{ alert('Speicher voll!'); }
 }
 
 function loadSettings(){
-  try{ return JSON.parse(localStorage.getItem(SET_KEY)||'{}'); }catch{ return {}; }
+  try{ return JSON.parse(lsGet(SET_KEY)||'{}'); }catch{ return {}; }
 }
-function saveSettings(s){ localStorage.setItem(SET_KEY,JSON.stringify(s)); }
+function saveSettings(s){ lsSet(SET_KEY,JSON.stringify(s)); }
 
 // ─────────────────────────────────────────
 // HELPERS
@@ -916,12 +921,17 @@ function importJSON(str){
 function el(tag, props, ...children){
   const e=document.createElement(tag);
   if(props) Object.entries(props).forEach(([k,v])=>{
+    if(v==null||v===false) return;
     if(k==='class') e.className=v;
     else if(k==='html') e.innerHTML=v;
-    else if(k.startsWith('on'))  e.addEventListener(k.slice(2).toLowerCase(),v);
-    else e.setAttribute(k,v);
+    else if(k.startsWith('on')&&typeof v==='function') e.addEventListener(k.slice(2).toLowerCase(),v);
+    else e.setAttribute(k,String(v));
   });
-  children.flat(Infinity).forEach(c=>{ if(c==null) return; e.appendChild(typeof c==='string'?document.createTextNode(c):c); });
+  children.flat(Infinity).forEach(c=>{
+    if(c==null||c===false||c===true) return;
+    if(typeof c==='string'||typeof c==='number') e.appendChild(document.createTextNode(String(c)));
+    else if(c instanceof Node) e.appendChild(c);
+  });
   return e;
 }
 
@@ -1863,7 +1873,13 @@ function render(){
   if(S.showMorning && S.mDraft!==null) app.appendChild(renderMorningModal());
 }
 
-render();
+try{
+  render();
+}catch(err){
+  const app=document.getElementById('app')||document.body;
+  app.innerHTML='<div style="font-family:monospace;color:#ff7070;background:#0a0e1a;padding:24px;min-height:100vh"><b>FocusLog – Startfehler</b><br><br>'+err.message+'<br><br><small>'+err.stack.replace(/</g,"&lt;")+'</small></div>';
+  console.error('FocusLog render error:',err);
+}
 </script>
 </body>
 </html>
