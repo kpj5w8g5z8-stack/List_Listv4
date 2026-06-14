@@ -99,7 +99,7 @@ input[type=time],input[type=date]{padding:10px 8px;font-size:14px;max-width:100%
 .preset-btn{padding:7px 13px;border-radius:20px;cursor:pointer;font-size:13px;font-family:inherit;
   border:1.5px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);}
 .preset-btn.active-tag{border-color:var(--accent);background:rgba(96,165,250,.15);color:var(--accentL);}
-.graph-wrap{overflow-x:auto;padding-bottom:4px;}
+.graph-wrap{overflow-x:auto;padding-bottom:32px;}
 .graph-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
 .legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);}
 .legend-dot{width:10px;height:10px;border-radius:50%;}
@@ -782,35 +782,84 @@ function buildDayGraph(date,selectedMetrics){
   });
   return svg+"</svg>";
 }
+function medAbbr(name){
+  if(!name)return'';
+  const M={Elvanse:'ELV',Lisdexamfetamin:'LDX',Methylphenidat:'MPH',Metiphenal:'MTP',Ritalin:'RIT',Concerta:'CON',Medikinet:'MED',Strattera:'STR',Intuniv:'INT'};
+  return M[name]||(name||'').slice(0,3).toUpperCase();
+}
 function buildTrendGraph(metricId,days=14){
-  const W=360,H=140,PAD={t:8,r:10,b:34,l:28};const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
+  const W=360,H=168,PAD={t:8,r:28,b:62,l:28};
+  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
   const data=[...buildTrendData(metricId,days)].reverse();
-  const m=METRICS.find(x=>x.id===metricId);if(!data.length||!m)return"";
+  const m=METRICS.find(x=>x.id===metricId);if(!data.length||!m)return'';
   const n=data.length;
+  // Sleep overlay data (aligned by date)
+  const sleepMap={};
+  buildSleepTrendData(days).forEach(d=>{if(d.avg!=null)sleepMap[d.date]=d.avg;});
+  const SL_MIN=4,SL_MAX=10;
   function xOf(i){return PAD.l+(i/(n-1||1))*gW;}
   function yOf(v){return PAD.t+gH-((v-1)/4)*gH;}
+  function yOfSleep(h){return PAD.t+gH-Math.max(0,Math.min(1,(h-SL_MIN)/(SL_MAX-SL_MIN)))*gH;}
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  // Metric grid lines + left axis
   for(let v=1;v<=5;v+=2){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
+  // Sleep right axis labels
+  [[4,'4h'],[7,'7h'],[10,'10h']].forEach(([h,lbl])=>{
+    svg+=`<text x="${W-PAD.r+4}" y="${yOfSleep(h)+3}" font-size="7" fill="#22d3ee" opacity="0.65">${lbl}</text>`;
+  });
+  // Null-data day shading
   data.forEach((d,i)=>{if(d.avg==null)svg+=`<line x1="${xOf(i)}" y1="${PAD.t}" x2="${xOf(i)}" y2="${PAD.t+gH}" stroke="#1e2840" stroke-width="6" opacity="0.45"/>`;});
+  // Sleep overlay line
+  const slPts=data.map((d,i)=>({i,h:sleepMap[d.date]})).filter(p=>p.h!=null);
+  for(let k=1;k<slPts.length;k++){
+    const a=slPts[k-1],b=slPts[k],gap=(b.i-a.i)>1;
+    svg+=`<line x1="${xOf(a.i)}" y1="${yOfSleep(a.h)}" x2="${xOf(b.i)}" y2="${yOfSleep(b.h)}" stroke="#22d3ee" stroke-width="${gap?1:1.5}" stroke-dasharray="4,3" opacity="${gap?0.22:0.55}"/>`;
+  }
+  slPts.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOfSleep(pt.h)}" r="2" fill="#22d3ee" opacity="0.6"/>`;});
+  // Metric line + data points
   const valid=data.map((d,i)=>({...d,i})).filter(d=>d.avg!=null);
   for(let k=1;k<valid.length;k++){
     const a=valid[k-1],b=valid[k],gap=(b.i-a.i)>1;
-    svg+=`<line x1="${xOf(a.i)}" y1="${yOf(a.avg)}" x2="${xOf(b.i)}" y2="${yOf(b.avg)}" stroke="${gap?"#46557e":m.color}" stroke-width="${gap?1.5:2.5}" stroke-linecap="round" ${gap?'stroke-dasharray="3,4"':""}/>`;
+    svg+=`<line x1="${xOf(a.i)}" y1="${yOf(a.avg)}" x2="${xOf(b.i)}" y2="${yOf(b.avg)}" stroke="${gap?'#46557e':m.color}" stroke-width="${gap?1.5:2.5}" stroke-linecap="round" ${gap?'stroke-dasharray="3,4"':''}/>`;
   }
   valid.forEach(pt=>{
     const date=data[pt.i]?.date,hs=date&&S.data[date]?.dayCtx?.stress;
     svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)}" r="3.5" fill="${m.color}"/>`;
     if(hs)svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.avg)-8}" r="2.5" fill="#ff7070" opacity="0.7"/>`;
   });
+  // Bottom annotations: date · med abbr · event dots
   const step=n>16?Math.ceil(n/8):2;
   data.forEach((d,i)=>{
-    if(i%step===0||i===n-1)svg+=`<text x="${xOf(i)}" y="${H-14}" text-anchor="middle" font-size="8" fill="#5a6890">${fmtDateXS(d.date)}</text>`;
-    const dd=S.data[d.date];
-    if(dd?.medication&&!dd?.isPauseDay)svg+=`<circle cx="${xOf(i)}" cy="${H-6}" r="3" fill="var(--purple)" opacity="0.8"/>`;
-    else if(dd?.isPauseDay)svg+=`<text x="${xOf(i)}" y="${H-2}" text-anchor="middle" font-size="7" fill="var(--orange)">P</text>`;
-    else if(d.date)svg+=`<circle cx="${xOf(i)}" cy="${H-6}" r="2" fill="#253050" opacity="0.5"/>`;
+    const x=xOf(i),dd=S.data[d.date];
+    // 1. Date label
+    if(i%step===0||i===n-1)
+      svg+=`<text x="${x}" y="${H-47}" text-anchor="middle" font-size="8" fill="#5a6890">${fmtDateXS(d.date)}</text>`;
+    // 2. Medication abbreviation
+    if(dd?.medication&&!dd.isPauseDay){
+      const abbr=medAbbr(dd.medication);
+      if(i%step===0||i===n-1)
+        svg+=`<text x="${x}" y="${H-33}" text-anchor="middle" font-size="6.5" fill="#c084fc" font-weight="600">${abbr}</text>`;
+      else
+        svg+=`<circle cx="${x}" cy="${H-38}" r="2.2" fill="#c084fc" opacity="0.7"/>`;
+    } else if(dd?.isPauseDay){
+      if(i%step===0||i===n-1)
+        svg+=`<text x="${x}" y="${H-33}" text-anchor="middle" font-size="7" fill="#fdba74">–P–</text>`;
+      else
+        svg+=`<circle cx="${x}" cy="${H-38}" r="2.2" fill="#fdba74" opacity="0.6"/>`;
+    } else if(d.date){
+      svg+=`<circle cx="${x}" cy="${H-38}" r="1.5" fill="#253050" opacity="0.4"/>`;
+    }
+    // 3. Event dots (stacked vertically)
+    const cks=Object.values(dd?.checkins||{});
+    const evs=[
+      [cks.some(c=>c.healthFlags?.gelenke),'#fdba74'],   // pain: orange
+      [cks.some(c=>c.healthFlags?.sport),'#4ade80'],     // sport: green
+      [cks.some(c=>(c.ibuprofenMg||0)>0),'#f472b6'],    // ibu: pink
+      [(sleepMap[d.date]!=null&&sleepMap[d.date]<6),'#60a5fa'], // short sleep: blue
+    ].filter(([on])=>on);
+    evs.forEach(([,col],j)=>{svg+=`<circle cx="${x}" cy="${H-20+j*7}" r="2" fill="${col}" opacity="0.85"/>`;});
   });
-  return svg+"</svg>";
+  return svg+'</svg>';
 }
 function buildBodyGraph(series,yMin,yMax,rangeKey){
   const W=360,H=140,PAD={t:8,r:10,b:24,l:36};const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
@@ -1608,7 +1657,7 @@ function renderStats(){
       if(!enoughDays)sec.appendChild(el("div",{style:{textAlign:"center",padding:"30px 0",color:"var(--muted)"}},"Noch zu wenig Tage für den Verlauf."));
       else{
         const days=S.graphRange==="week"?7:30;
-        sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},`Verlauf – letzte ${days} Tage`),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"8px"}},"🔴 Stresstag · 🟣 Med-Tag · grau gestrichelt = Datenlücke (< 3 Check-ins)"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildTrendGraph(mid,days)));})));
+        sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},`Verlauf – letzte ${days} Tage`),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"8px"}},"🔵 Metrik · 🩵 Schlaf (4–10h, rechte Achse) · 🟣 Med · ⬜ Pause | 🔴 Stress · 🟠 Schmerz · 🟢 Sport · 🩷 Ibu · 🔵 Kurzschlaf – – Lücke"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildTrendGraph(mid,days)));})));
         const sleepSvg=buildSleepTrendGraph(days);
         if(sleepSvg)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"😴 Schlafzeiten – Verlauf"),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px"}},"Stunden pro Nacht"),svgEl(sleepSvg)));
         sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Ø Wirkungsverlauf über den Tag"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildHourlyGraph(mid)));})));
