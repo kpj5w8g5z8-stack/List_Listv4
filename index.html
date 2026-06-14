@@ -502,6 +502,18 @@ function getSymptomFreq(flagId,rangeKey){
     return{date,count};
   });
 }
+function getJointPainFreq(rangeKey){
+  const now=new Date(),cutoff=new Date(now);
+  if(rangeKey==="week")cutoff.setDate(now.getDate()-7);
+  else if(rangeKey==="month")cutoff.setMonth(now.getMonth()-1);
+  else cutoff.setFullYear(now.getFullYear()-1);
+  const cutStr=cutoff.toISOString().slice(0,10);
+  return Object.keys(S.data).filter(d=>d>=cutStr).sort().map(date=>{
+    let count=0;
+    Object.values(S.data[date]?.checkins||{}).forEach(c=>{if((c.painLocations||[]).length)count++;});
+    return{date,count};
+  });
+}
 function getPainHeatmap(){
   const counts={};
   Object.keys(S.data).forEach(date=>{Object.values(S.data[date]?.checkins||{}).forEach(c=>{(c.painLocations||[]).forEach(loc=>{counts[loc]=(counts[loc]||0)+1;});});});
@@ -1437,7 +1449,7 @@ function renderStats(){
     const ibuData=getIbuWeekly();
     if(ibuData.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"💊 Ibuprofen-Konsum (mg / Woche)"),svgEl(buildBarGraph(ibuData.map(i=>({label:i.label,value:i.value})),"#ff7070")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`Gesamt: ${ibuData.reduce((a,i)=>a+i.value,0)} mg`)));
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"💊 Ibuprofen"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Noch keine Daten.")));
-    const gelenkData=getSymptomFreq("gelenke",S.symptomRange);const gelenkItems=gelenkData.filter(d=>d.count>0);
+    const gelenkData=getJointPainFreq(S.symptomRange);const gelenkItems=gelenkData.filter(d=>d.count>0);
     if(gelenkItems.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🦵 Gelenkschmerzen – Häufigkeit"),svgEl(buildBarGraph(gelenkData.map(d=>({label:fmtDateXS(d.date),value:d.count})),"#fdba74")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`${gelenkItems.length} Tag(e) im Zeitraum`)));
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🦵 Gelenkschmerzen"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Keine Daten im Zeitraum.")));
     const verdauData=getSymptomFreq("verdauung",S.symptomRange);const verdauItems=verdauData.filter(d=>d.count>0);
@@ -1460,6 +1472,7 @@ function renderStats(){
     });
     if(hasAnyLocData)sec.appendChild(locCard);
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"📍 Gelenkschmerz-Details"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Noch keine Lokalisierungen.")));
+    const heatmap=getPainHeatmap();
     sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🗺 Schmerz-Heatmap"),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginBottom:"8px"}},"Intensiver rot = häufiger gemeldet"),(()=>{const d=document.createElement("div");d.innerHTML=buildPainSilhouette(heatmap,false,[]);return d;})(),Object.keys(heatmap).length?el("div",{style:{marginTop:"8px",display:"flex",flexWrap:"wrap",gap:"6px"}},...Object.entries(heatmap).sort((a,b)=>b[1]-a[1]).map(([locId,count])=>{const loc=PAIN_LOCATIONS_SVG.find(l=>l.id===locId);return el("div",{style:{fontSize:"12px"}},el("span",{style:{color:"var(--red)"}},`${loc?.label||locId}:`),el("span",{style:{color:"var(--muted)"}},` ${count}×`));})):el("div",{style:{color:"var(--muted)",fontSize:"13px",marginTop:"8px"}},"Noch keine Schmerzlokalisierungen.")));
     const hfCounts={};Object.keys(S.data).forEach(d=>{Object.values(S.data[d]?.checkins||{}).forEach(c=>{Object.entries(c.healthFlags||{}).forEach(([id,v])=>{if(v)hfCounts[id]=(hfCounts[id]||0)+1;});});});
     if(HEALTH_FLAGS.some(f=>hfCounts[f.id]))sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🩺 Health-Flags gesamt"),el("div",{style:{display:"flex",flexDirection:"column",gap:"10px"}},...HEALTH_FLAGS.filter(f=>hfCounts[f.id]).map(f=>el("div",{},el("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"14px",marginBottom:"4px"}},el("span",{},f.icon+" "+f.label),el("span",{style:{color:"var(--muted)"}},hfCounts[f.id]+"×")),el("div",{class:"sbar-wrap"},el("div",{class:"sbar-fill",style:{width:`${Math.min(hfCounts[f.id]/Math.max(...Object.values(hfCounts))*100,100)}%`,background:"var(--muted)"}})))))));
