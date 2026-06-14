@@ -399,14 +399,13 @@ function loadSettings(){
     if(s.inTherapy===undefined)s.inTherapy=false;
     if(s.takesMedication===undefined)s.takesMedication=true;
     if(!s.koerpergroesse)s.koerpergroesse="";
-    if(!s.koerpergewicht)s.koerpergewicht="";
     if(!s.medDurations)s.medDurations={};
     if(!s.medDurationsByMfr)s.medDurationsByMfr={};
     if(!s.defaultMed)s.defaultMed=(s.meds&&s.meds[0])||"Elvanse";
     if(s.defaultDosage===undefined)s.defaultDosage="";
     if(s.defaultManufacturer===undefined)s.defaultManufacturer="";
     return s;
-  }catch{return{meds:["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"],manufacturers:["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"],medTherapy:true,inTherapy:false,takesMedication:true,koerpergroesse:"",koerpergewicht:"",medDurations:{},medDurationsByMfr:{},defaultMed:"Elvanse",defaultDosage:""};}
+  }catch{return{meds:["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"],manufacturers:["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"],medTherapy:true,inTherapy:false,takesMedication:true,koerpergroesse:"",medDurations:{},medDurationsByMfr:{},defaultMed:"Elvanse",defaultDosage:""};}
 }
 function saveSettings(s){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));}catch{}}
 function getMeds(){return loadSettings().meds;}
@@ -745,6 +744,136 @@ function generateInsights(){
     const diff=l3-f3;
     if(Math.abs(diff)>0.3)ins.push({type:diff>0?"pos":"warn",icon:diff>0?"📈":"📊",title:diff>0?"Fokus verbessert sich":"Fokus nimmt ab",text:diff>0?`Fokus hat sich um Ø +${diff.toFixed(1)} verbessert.`:`Fokus ist um Ø ${diff.toFixed(1)} gesunken.`});
   }
+  // ── BMI ──
+  const sets=loadSettings();
+  const wDaysSorted=Object.keys(S.data).filter(d=>S.data[d]?.gewicht).sort();
+  const curW=wDaysSorted.length?+S.data[wDaysSorted[wDaysSorted.length-1]].gewicht:null;
+  const heightM=sets.koerpergroesse?+sets.koerpergroesse/100:null;
+  if(curW&&heightM&&heightM>1){
+    const bmi=+(curW/(heightM*heightM)).toFixed(1);
+    const bmiCat=bmi<18.5?"Untergewicht":bmi<25?"Normalgewicht":bmi<30?"Übergewicht":"Adipositas";
+    const bmiIcon=bmi<18.5?"⚠️":bmi<25?"✅":bmi<30?"⚠️":"🔴";
+    ins.push({type:bmi>=18.5&&bmi<25?"pos":"warn",icon:"⚖️",title:`BMI: ${bmi} – ${bmiCat}`,
+      text:bmi>=18.5&&bmi<25?`Aus ${curW} kg / ${sets.koerpergroesse} cm. Normalgewicht unterstützt gleichmäßige Medikamentenwirkung.`:
+        bmi<18.5?`Aus ${curW} kg / ${sets.koerpergroesse} cm. Stimulanzien können Appetit hemmen – bitte auf ausreichende Ernährung achten.`:
+        `Aus ${curW} kg / ${sets.koerpergroesse} cm. Erhöhter BMI kann ADHS-Symptome und Medikamentenwirkung beeinflussen.`});
+    if(wDaysSorted.length>=2){
+      const firstW=+S.data[wDaysSorted[0]].gewicht;
+      const wdiff=+(curW-firstW).toFixed(1);
+      if(Math.abs(wdiff)>=1.5)ins.push({type:wdiff<0?"warn":"pos",icon:"⚖️",title:`Gewicht: ${wdiff>0?"+":""}${wdiff} kg seit Beginn`,
+        text:wdiff<0?`Gewichtsverlust von ${Math.abs(wdiff)} kg – häufige Nebenwirkung von Stimulanzien (Appetithemmung). Auf ausreichende Kalorienaufnahme achten.`:
+          `Gewichtszunahme von ${wdiff} kg im Verlauf.`});
+    }
+  }
+  // ── Blutdruck & Puls ──
+  const allDaysSorted=Object.keys(S.data).sort();
+  const bpMeasDays=allDaysSorted.filter(d=>S.data[d]?.sys&&S.data[d]?.dia);
+  if(bpMeasDays.length>=3){
+    const avgS=Math.round(bpMeasDays.reduce((s,d)=>s+(+S.data[d].sys),0)/bpMeasDays.length);
+    const avgD=Math.round(bpMeasDays.reduce((s,d)=>s+(+S.data[d].dia),0)/bpMeasDays.length);
+    const bpGrade=avgS>=160||avgD>=100?"Hypertonie Grad 2":avgS>=140||avgD>=90?"Hypertonie Grad 1":avgS>=130||avgD>=85?"Hochnormal":"Normal";
+    const bpWarn=avgS>=130||avgD>=85;
+    ins.push({type:bpWarn?"warn":"pos",icon:"❤️",title:`Blutdruck Ø: ${avgS}/${avgD} mmHg – ${bpGrade}`,
+      text:bpWarn?`Ø aus ${bpMeasDays.length} Messungen. Bei dauerhaft erhöhten Werten bitte mit Arzt besprechen – Stimulanzien können Blutdruck leicht erhöhen.`:
+        `Ø aus ${bpMeasDays.length} Messungen. Im Normalbereich.`});
+    const medBpD=bpMeasDays.filter(d=>S.data[d]?.medication&&!S.data[d]?.isPauseDay);
+    const pauseBpD=bpMeasDays.filter(d=>S.data[d]?.isPauseDay);
+    if(medBpD.length>=3&&pauseBpD.length>=2){
+      const mS=Math.round(medBpD.reduce((s,d)=>s+(+S.data[d].sys),0)/medBpD.length);
+      const pS=Math.round(pauseBpD.reduce((s,d)=>s+(+S.data[d].sys),0)/pauseBpD.length);
+      if(Math.abs(mS-pS)>=5)ins.push({type:mS>pS?"warn":"pos",icon:"💊",
+        title:mS>pS?`Medikament erhöht Blutdruck um ~${mS-pS} mmHg`:`Blutdruck niedriger an Med-Tagen`,
+        text:`Systolisch Ø ${mS} mmHg (Med) vs. ${pS} mmHg (Pause). ${mS>pS?"Typisch für Stimulanzien – im Auge behalten.":""}`});
+    }
+    const stressBpD=bpMeasDays.filter(d=>S.data[d]?.dayCtx?.stress);
+    const noStressBpD=bpMeasDays.filter(d=>!S.data[d]?.dayCtx?.stress);
+    if(stressBpD.length>=2&&noStressBpD.length>=2){
+      const sS=Math.round(stressBpD.reduce((s,d)=>s+(+S.data[d].sys),0)/stressBpD.length);
+      const nS=Math.round(noStressBpD.reduce((s,d)=>s+(+S.data[d].sys),0)/noStressBpD.length);
+      if(sS-nS>=5)ins.push({type:"warn",icon:"🔴",title:`Stress erhöht Blutdruck um ~${sS-nS} mmHg`,
+        text:`Systolisch Ø ${sS} mmHg (Stresstage) vs. ${nS} mmHg (normale Tage).`});
+    }
+    const pulsMeasDays=allDaysSorted.filter(d=>S.data[d]?.puls);
+    if(pulsMeasDays.length>=3){
+      const medPD=pulsMeasDays.filter(d=>S.data[d]?.medication&&!S.data[d]?.isPauseDay);
+      const pausePD=pulsMeasDays.filter(d=>S.data[d]?.isPauseDay);
+      if(medPD.length>=2&&pausePD.length>=2){
+        const mP=Math.round(medPD.reduce((s,d)=>s+(+S.data[d].puls),0)/medPD.length);
+        const pP=Math.round(pausePD.reduce((s,d)=>s+(+S.data[d].puls),0)/pausePD.length);
+        if(mP-pP>=5)ins.push({type:mP>90?"warn":"pos",icon:"💓",title:`Puls erhöht an Med-Tagen (+${mP-pP} bpm)`,
+          text:`Ø ${mP} bpm (Med) vs. ${pP} bpm (Pause). ${mP>90?"Bei dauerhaft über 90 bpm Arzt informieren.":"Leichte Erhöhung, typisch für Stimulanzien."}`});
+      }
+    }
+  }
+  // ── Sport → Fokus Folgetag ──
+  if(sportDays.length>=3){
+    const sFocus=[],nsFocus=[];
+    allDaysSorted.forEach((date,i)=>{
+      const next=allDaysSorted[i+1];if(!next)return;
+      const nf=avg(Object.values(S.data[next]?.checkins||{}).map(c=>c.symptoms?.focus).filter(Boolean));
+      if(!nf)return;
+      if(sportDays.includes(date))sFocus.push(nf);
+      else nsFocus.push(nf);
+    });
+    if(sFocus.length>=3&&nsFocus.length>=3){
+      const sf=avg(sFocus),nsf=avg(nsFocus),diff=sf-nsf;
+      if(diff>0.3)ins.push({type:"pos",icon:"🏃",title:`Sport verbessert Fokus am Folgetag`,
+        text:`Nach Sporttagen Fokus-Ø ${sf.toFixed(1)} vs. ${nsf.toFixed(1)} ohne Sport (+${diff.toFixed(1)}).`});
+    }
+  }
+  // ── Appetithemmung durch Medikament ──
+  {const mH=[],bH=[];
+  allDaysSorted.forEach(d=>{
+    const dd=S.data[d];const hv=Object.values(dd?.checkins||{}).map(c=>c.symptoms?.hunger).filter(Boolean);
+    if(!hv.length)return;const ha=avg(hv);
+    if(dd?.medication&&!dd?.isPauseDay)mH.push(ha);else if(dd?.isPauseDay||dd?.isBaseline)bH.push(ha);
+  });
+  if(mH.length>=3&&bH.length>=2){const diff=avg(bH)-avg(mH);if(diff>0.4)ins.push({type:"warn",icon:"🍽️",title:`Appetithemmung durch Medikament`,
+    text:`Hunger Ø ${avg(mH).toFixed(1)}/5 (Med) vs. ${avg(bH).toFixed(1)}/5 (Pause). Ausreichende Ernährung stabilisiert die Medikamentenwirkung.`});}}
+  // ── Gelenkschmerz → Schlafqualität ──
+  {const painDays2=allDaysSorted.filter(d=>Object.values(S.data[d]?.checkins||{}).some(c=>c.healthFlags?.gelenke));
+  const noPainDays2=allDaysSorted.filter(d=>!painDays2.includes(d));
+  if(painDays2.length>=3&&noPainDays2.length>=3){
+    const pSleep=painDays2.map(d=>getSleepDurationForDate(d)).filter(Boolean);
+    const npSleep=noPainDays2.map(d=>getSleepDurationForDate(d)).filter(Boolean);
+    if(pSleep.length>=3&&npSleep.length>=3){const diff=avg(npSleep)-avg(pSleep);if(diff>0.5)ins.push({type:"warn",icon:"🦵",title:`Gelenkschmerzen verkürzen Schlaf`,
+      text:`An Schmerztagen Ø ${avg(pSleep).toFixed(1)}h Schlaf vs. ${avg(npSleep).toFixed(1)}h ohne Schmerzen.`});}}}
+  // ── Ibuprofen-Häufigkeit ──
+  if(allDaysSorted.length>=14){
+    const ibuDays=allDaysSorted.filter(d=>Object.values(S.data[d]?.checkins||{}).some(c=>(c.ibuprofenMg||0)>0));
+    if(ibuDays.length/allDaysSorted.length>0.25)ins.push({type:"warn",icon:"💊",title:`Ibuprofen an ${Math.round(ibuDays.length/allDaysSorted.length*100)}% der Tage`,
+      text:`An ${ibuDays.length} von ${allDaysSorted.length} Tagen Ibuprofen. Häufiger Gebrauch kann Magenschleimhaut und Nieren belasten.`});
+  }
+  // ── Hersteller-Vergleich ──
+  {const mfrGroups={};
+  Object.keys(S.data).forEach(date=>{
+    const d=S.data[date];
+    if(!d?.medication||d?.isPauseDay||!d?.manufacturer)return;
+    const key=d.medication+'||'+d.manufacturer;
+    if(!mfrGroups[key])mfrGroups[key]={med:d.medication,mfr:d.manufacturer,focus:[],mood:[],energy:[]};
+    const cks=Object.values(d.checkins||{});
+    const fv=cks.map(c=>c.symptoms?.focus).filter(Boolean);
+    const mv=cks.map(c=>c.symptoms?.mood).filter(Boolean);
+    const ev=cks.map(c=>c.symptoms?.energy).filter(Boolean);
+    if(fv.length>=2){mfrGroups[key].focus.push(avg(fv));mfrGroups[key].mood.push(avg(mv));mfrGroups[key].energy.push(avg(ev));}
+  });
+  // Group by medication, compare manufacturers within same med
+  const byMed={};
+  Object.values(mfrGroups).forEach(g=>{
+    if(g.focus.length<3)return;
+    if(!byMed[g.med])byMed[g.med]=[];
+    byMed[g.med].push({mfr:g.mfr,f:avg(g.focus),m:avg(g.mood),e:avg(g.energy),n:g.focus.length});
+  });
+  Object.entries(byMed).forEach(([med,groups])=>{
+    if(groups.length<2)return;
+    groups.sort((a,b)=>b.f-a.f);
+    const best=groups[0],worst=groups[groups.length-1];
+    const diff=best.f-worst.f;
+    if(diff>=0.3){
+      ins.push({type:"pos",icon:"🏭",title:`${med}: ${best.mfr} wirkt besser (Fokus +${diff.toFixed(1)})`,
+        text:`${best.mfr}: Ø ${best.f.toFixed(1)} Fokus (n=${best.n}) vs. ${worst.mfr}: Ø ${worst.f.toFixed(1)} (n=${worst.n}). Stimmung und Energie zeigen ${Math.abs(best.m-worst.m)>0.2?'ähnliches':'kaum'} Muster.`});
+    }
+  });}
   return ins;
 }
 
@@ -1161,7 +1290,7 @@ function printReport(){
     <h2>Stammdaten</h2>
     <div class="pr-row">
       ${kv("Körpergröße",settings.koerpergroesse?settings.koerpergroesse+" cm":na)}
-      ${kv("Körpergewicht",settings.koerpergewicht?settings.koerpergewicht+" kg":na)}
+      ${kv("Körpergewicht (aktuell)",r.currentWeight?r.currentWeight+" kg":na)}
     </div>
     <hr class="pr-divider">
 
@@ -1447,8 +1576,7 @@ function renderSettingsModal(){
     // Personal data
     el("span",{class:"card-label"},"👤 Stammdaten"),
     el("div",{class:"row2",style:{marginBottom:"12px"}},
-      (()=>{const w=el("div",{class:"vital-field"});const lbl=document.createElement("label");lbl.textContent="Körpergröße (cm)";const inp=document.createElement("input");inp.type="number";inp.placeholder="z.B. 178";inp.value=settings.koerpergroesse||"";inp.oninput=e=>{const s=loadSettings();s.koerpergroesse=e.target.value;saveSettings(s);};w.appendChild(lbl);w.appendChild(inp);return w;})(),
-      (()=>{const w=el("div",{class:"vital-field"});const lbl=document.createElement("label");lbl.textContent="Gewicht (kg)";const inp=document.createElement("input");inp.type="number";inp.placeholder="z.B. 75";inp.value=settings.koerpergewicht||"";inp.oninput=e=>{const s=loadSettings();s.koerpergewicht=e.target.value;saveSettings(s);};w.appendChild(lbl);w.appendChild(inp);return w;})()
+      (()=>{const w=el("div",{class:"vital-field"});const lbl=document.createElement("label");lbl.textContent="Körpergröße (cm)";const inp=document.createElement("input");inp.type="number";inp.placeholder="z.B. 178";inp.value=settings.koerpergroesse||"";inp.oninput=e=>{const s=loadSettings();s.koerpergroesse=e.target.value;saveSettings(s);};w.appendChild(lbl);w.appendChild(inp);return w;})()
     ),
     // Global health checkboxes
     el("span",{class:"card-label"},"🏥 Globale Gesundheitsangaben"),
@@ -1758,7 +1886,7 @@ function renderStats(){
   if(S.statsTab==="settings"){
     const meds=getMeds();const ts=getTreatmentStatus();const medTherapy=getMedTherapy();const settings=loadSettings();
     sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🔬 Therapie"),el("div",{class:"therapy-toggle"+(medTherapy?" on":""),onClick:()=>{const s=loadSettings();s.medTherapy=!medTherapy;saveSettings(s);render();}},el("div",{style:{flex:"1"}},el("div",{style:{fontSize:"14px",fontWeight:"600",color:medTherapy?"var(--green)":"var(--muted)"}},"Medikamentöse Therapie aktiv"),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"3px"}},medTherapy?"Hersteller-Auswahl aktiv":"Vereinfachter Modus")),el("div",{class:"toggle-track"},el("div",{class:"toggle-thumb"})))));
-    sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"👤 Stammdaten"),el("div",{style:{fontSize:"13px",color:"var(--muted)"}},(settings.koerpergroesse?`Größe: ${settings.koerpergroesse} cm  `:"")+(settings.koerpergewicht?`Gewicht: ${settings.koerpergewicht} kg`:"")||"Keine Stammdaten – bitte in Einstellungen eintragen."),el("div",{style:{marginTop:"8px",fontSize:"13px"}},(settings.inTherapy?"✅ In Therapie":"☐ Nicht in Therapie"),"  ",(settings.takesMedication?"✅ Nimmt Medikamente":"☐ Keine Medikamente"))));
+    sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"👤 Stammdaten"),el("div",{style:{fontSize:"13px",color:"var(--muted)"}},(settings.koerpergroesse?`Größe: ${settings.koerpergroesse} cm  `:"")||(()=>{const wDays=Object.keys(S.data).filter(d=>S.data[d]?.gewicht).sort();const cw=wDays.length?S.data[wDays[wDays.length-1]].gewicht:null;return cw?`Gewicht aktuell: ${cw} kg  `:"";})())||"Keine Stammdaten – Körpergröße bitte in Einstellungen eintragen.",el("div",{style:{marginTop:"8px",fontSize:"13px"}},(settings.inTherapy?"✅ In Therapie":"☐ Nicht in Therapie"),"  ",(settings.takesMedication?"✅ Nimmt Medikamente":"☐ Keine Medikamente"))));
     sec.appendChild((()=>{
       const card=el("div",{class:"card"});
       card.appendChild(el("span",{class:"card-label"},"⚡ Schnell-Log (Dopamin-Button)"));
