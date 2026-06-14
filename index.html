@@ -847,7 +847,7 @@ function buildTrendGraph(metricId,days=14){
     }
     const cks=Object.values(dd?.checkins||{});
     [
-      [cks.some(c=>c.healthFlags?.gelenke),'🩼'],
+      [cks.some(c=>c.healthFlags?.gelenke),'🦵'],
       [cks.some(c=>c.healthFlags?.sport),'💪'],
       [cks.some(c=>(c.ibuprofenMg||0)>0),'💊'],
       [(sleepMap[d.date]!=null&&sleepMap[d.date]<6),'😪'],
@@ -1654,7 +1654,7 @@ function renderStats(){
       if(!enoughDays)sec.appendChild(el("div",{style:{textAlign:"center",padding:"30px 0",color:"var(--muted)"}},"Noch zu wenig Tage für den Verlauf."));
       else{
         const days=S.graphRange==="week"?7:30;
-        sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},`Verlauf – letzte ${days} Tage`),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"8px"}},"🔵 Metrik · 🩵 Schlaf (4–10h, rechte Achse) · 🟣 Med · ⬜ Pause | 🔴 Stress · 🟠 Schmerz · 🟢 Sport · 🩷 Ibu · 🔵 Kurzschlaf – – Lücke"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildTrendGraph(mid,days)));})));
+        sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},`Verlauf – letzte ${days} Tage`),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"Linie = jeweilige Metrik · 💚 Schlafdauer-Fläche (4–10h, rechte Achse)"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"🟣 ELV/MPH/CON… = Medikament-Kürzel · –P– = Pause · 🔴 Stresstag"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"8px",lineHeight:"1.7"}},"🦵 Schmerz · 💪 Sport · 💊 Ibuprofen · 😪 Kurzschlaf <6h · grau‒‒ = Datenlücke"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildTrendGraph(mid,days)));})));
         const sleepSvg=buildSleepTrendGraph(days);
         if(sleepSvg)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"😴 Schlafzeiten – Verlauf"),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px"}},"Stunden pro Nacht"),svgEl(sleepSvg)));
         sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Ø Wirkungsverlauf über den Tag"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildHourlyGraph(mid)));})));
