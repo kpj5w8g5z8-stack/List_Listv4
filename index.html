@@ -315,6 +315,7 @@ const CTX_TAGS=[
 const STRESS_TAGS=[
   {id:"stress",label:"🔴 Viel Stress"},{id:"bildschirm",label:"📱 Bildschirm überzogen"},
   {id:"routine",label:"✅ Routine eingehalten"},{id:"trinken",label:"💧 Zu wenig getrunken"},
+  {id:"hitze",label:"🔥 Extreme Hitze"},{id:"kaelte",label:"❄️ Extreme Kälte"},
 ];
 const SLEEP_TAGS=[
   {id:"gedankenkarussell",label:"🌀 Gedankenkarussell"},
@@ -330,15 +331,76 @@ function load(){
     const oldRaw=JSON.parse(localStorage.getItem("adhs_v4")||"{}");
     const oldData=oldRaw.data||oldRaw;
     if(oldData&&typeof oldData==="object"&&Object.keys(oldData).some(k=>/^\d{4}/.test(k))){
-      const merged={...oldData,...cur};
+      const merged=migrateMeds({...oldData,...cur});
       localStorage.setItem(SK,JSON.stringify(merged));
       localStorage.setItem("adhs_v4","{}");
       return merged;
     }
+    cur=migrateMeds(cur);
+    localStorage.setItem(SK,JSON.stringify(cur));
     return cur;
   }catch{return{};}
 }
 function persist(d){try{localStorage.setItem(SK,JSON.stringify(d));}catch{}}
+// ── MEHRFACHE MEDIKAMENTENEINNAHME (Splitting & Folgedosen) ──
+// Neues Datenmodell: day.medications = [{medication,dosage,takenAt,manufacturer}, …]
+// Die Alt-Felder medication/dosage/takenAt/manufacturer werden als Spiegel der
+// ERSTEN (frühesten) Einnahme des Tages weitergepflegt. Dadurch funktionieren alle
+// bestehenden Auswertungen, Graphen und Berichte unverändert weiter (Basis = erste Einnahme).
+function migrateMeds(data){
+  if(!data||typeof data!=="object")return data;
+  Object.keys(data).forEach(date=>{
+    const day=data[date];
+    if(!day||typeof day!=="object")return;
+    if(!Array.isArray(day.medications)){
+      if(day.medication&&!day.isPauseDay)
+        day.medications=[{medication:day.medication,dosage:day.dosage||"",takenAt:day.takenAt||"",manufacturer:day.manufacturer||""}];
+      else
+        day.medications=[];
+    }
+  });
+  return data;
+}
+function sortMeds(list){
+  return [...(list||[])].sort((a,b)=>{
+    const ta=a.takenAt||"99:99",tb=b.takenAt||"99:99";
+    return ta<tb?-1:ta>tb?1:0;
+  });
+}
+function normalizeMedList(day){
+  if(!day)return[];
+  if(Array.isArray(day.medications))return day.medications;
+  if(day.medication&&!day.isPauseDay)
+    return[{medication:day.medication,dosage:day.dosage||"",takenAt:day.takenAt||"",manufacturer:day.manufacturer||""}];
+  return[];
+}
+// Liefert die nach Uhrzeit sortierten Einnahmen eines Tages (akzeptiert Tagesobjekt ODER Datums-String).
+function getDayMeds(dayOrDate){
+  const day=typeof dayOrDate==="string"?S.data[dayOrDate]:dayOrDate;
+  return sortMeds(normalizeMedList(day));
+}
+// Spiegelt die erste (früheste) Einnahme zurück in die Alt-Felder → Rückwärtskompatibilität.
+function syncDayMedMirror(day){
+  if(!day)return;
+  if(day.isPauseDay){day.medication=null;day.dosage="";day.takenAt="";day.manufacturer="";return;}
+  if(Array.isArray(day.medications)){
+    const list=sortMeds(day.medications);
+    if(list.length){const f=list[0];day.medication=f.medication;day.dosage=f.dosage||"";day.takenAt=f.takenAt||"";day.manufacturer=f.manufacturer||"";}
+    else{day.medication=null;day.dosage="";day.takenAt="";day.manufacturer="";}
+  }
+}
+function parseMg(s){const n=parseFloat(String(s==null?"":s).replace(",","."));return isFinite(n)?n:0;}
+// Gesamtdosis (mg) und Anzahl der Einnahmen eines Tages (kumulierte Tagesdosis).
+function dayDoseSummary(day){
+  const list=getDayMeds(day);
+  return{count:list.length,totalMg:list.reduce((s,m)=>s+parseMg(m.dosage),0)};
+}
+// „Offener“ Eintrag aus der Composer-Maske (Med + Zeit/Dosis), der beim Speichern übernommen wird.
+function medComposerPending(f){
+  if(!f||f.isPause)return null;
+  if(f.takenAt||f.dosage)return{medication:f.medication||getMeds()[0]||"Elvanse",dosage:f.dosage||"",takenAt:f.takenAt||"",manufacturer:f.manufacturer||""};
+  return null;
+}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function nowHour(){return new Date().getHours()||24;}
 function fmtDate(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{weekday:"long",day:"numeric",month:"long"});}
@@ -346,6 +408,30 @@ function fmtDateS(d){return new Date(d+"T12:00").toLocaleDateString("de-DE",{wee
 function fmtDateXS(d){const dt=new Date(d+"T12:00");return`${dt.getDate()}.${dt.getMonth()+1}`;}
 function ratingColor(v,inv){const val=inv?6-v:v;if(val<=1)return"#ff7070";if(val===2)return"#fb923c";if(val===3)return"#fcd34d";if(val===4)return"#86efac";return"#4ade80";}
 function getLast7(){const a=[];for(let i=0;i<14;i++){const d=new Date();d.setDate(d.getDate()-i);a.push(d.toISOString().slice(0,10));}return a;}
+// Punkt 5: Liefert ALLE Kalendertage lückenlos vom frühesten je erfassten Eintrag (mind. 14 Tage zurück) bis heute.
+function buildDateRange(){
+  const today=todayStr();
+  const keys=Object.keys(S.data||{}).filter(k=>/^\d{4}-\d{2}-\d{2}$/.test(k)).sort();
+  let startStr=keys.length?keys[0]:today;
+  const min14=new Date();min14.setDate(min14.getDate()-13);
+  const min14Str=min14.toISOString().slice(0,10);
+  if(startStr>min14Str)startStr=min14Str; // immer mindestens ein 14-Tage-Fenster anzeigen
+  const start=new Date(startStr+"T12:00"),end=new Date(today+"T12:00");
+  const out=[];let guard=0;
+  for(let dt=new Date(start);dt<=end&&guard<4001;dt.setDate(dt.getDate()+1),guard++)out.push(dt.toISOString().slice(0,10));
+  if(!out.length)out.push(today);
+  return out; // chronologisch aufsteigend (alt → neu)
+}
+// Prüft, ob an einem Tag IRGENDWELCHE relevanten Daten vorliegen (für den Punkt-Indikator der Datumsschiene).
+function hasAnyDayData(d){
+  const day=S.data[d];if(!day)return false;
+  if(Object.keys(day.checkins||{}).length)return true;
+  if(getDayMeds(day).length)return true;
+  if(day.isPauseDay||day.isSick||day.isBaseline)return true;
+  if(day.aufgestandenAt||day.schlafenAt||day.gewicht||day.sys||day.sysPeak)return true;
+  if(day.dayCtx&&Object.values(day.dayCtx).some(Boolean))return true;
+  return false;
+}
 function avg(arr){return arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length):null;}
 function calcSleepDuration(schlafenAt,aufgestandenAt){
   // schlafenAt = time person went to sleep (may be after midnight, e.g. 02:00)
@@ -428,13 +514,18 @@ function learnMedDuration(med,mfr){
   const samples=[];
   Object.keys(S.data).forEach(date=>{
     const d=S.data[date];
-    if(!d||!d.takenAt||!d.medication||d.isPauseDay)return;
-    if(med&&d.medication!==med)return;
-    if(mfr&&(d.manufacturer||"")!==mfr)return;
-    const mh=hhmmToH(d.takenAt);if(mh==null)return;
-    const cks=Object.entries(d.checkins||{}).sort((a,b)=>+a[0]-+b[0]);
-    const rb=cks.find(([h,c])=>+h>mh&&(c.events||[]).some(e=>e.type==="neg"&&(e.label.includes("Rebound")||e.label.includes("Wirkung weg"))));
-    if(rb){const dur=+rb[0]-mh;if(dur>=2&&dur<=12)samples.push(dur);}
+    if(!d||d.isPauseDay)return;
+    const doses=getDayMeds(d);if(!doses.length)return;
+    const cks=Object.entries(d.checkins||{}).map(([h,c])=>[+h,c]).sort((a,b)=>a[0]-b[0]);
+    doses.forEach((dose,di)=>{
+      if(med&&dose.medication!==med)return;
+      if(mfr&&(dose.manufacturer||"")!==mfr)return;
+      const mh=hhmmToH(dose.takenAt);if(mh==null)return;
+      // Rebound dieser Dosis nur bis zur nächsten Einnahme zählen (Folgedosen nicht vermischen)
+      const nextH=di+1<doses.length?(hhmmToH(doses[di+1].takenAt)??24):24;
+      const rb=cks.find(([h,c])=>h>mh&&h<=nextH&&(c.events||[]).some(e=>e.type==="neg"&&(e.label.includes("Rebound")||e.label.includes("Wirkung weg"))));
+      if(rb){const dur=rb[0]-mh;if(dur>=2&&dur<=12)samples.push(dur);}
+    });
   });
   return{avg:samples.length?+(samples.reduce((a,b)=>a+b,0)/samples.length).toFixed(1):null,n:samples.length};
 }
@@ -453,7 +544,7 @@ let S={
   tab:"today",data:load(),selDate:todayStr(),
   checkinHour:null,draft:null,saved:false,
   showMed:false,
-  medForm:{medication:"Elvanse",dosage:"",takenAt:"",manufacturer:"",isPause:false,isBaseline:false,
+  medForm:{medication:"Elvanse",dosage:"",takenAt:"",manufacturer:"",medications:[],isPause:false,isBaseline:false,
     aufgestandenAt:"",schlafenAt:"",gewicht:"",gewichtTime:"",sys:"",dia:"",puls:"",bpTime:"",
     sysPeak:"",diaPeak:"",pulsPeak:"",bpTimePeak:"",isSick:false,
     ctxTags:{},stressTags:{}},
@@ -494,23 +585,25 @@ function saveDayCtx(ctxObj){
 function saveMed(){
   const d=S.data;
   if(!d[S.selDate])d[S.selDate]={checkins:{}};
-  const f=S.medForm;
-  Object.assign(d[S.selDate],{
-    medication:f.isPause?null:f.medication,
-    dosage:f.isPause?"":f.dosage,
-    takenAt:f.isPause?"":f.takenAt,
-    manufacturer:f.isPause?"":f.manufacturer||"",
-    isBaseline:f.isBaseline||false,
-    isPauseDay:f.isPause||false,
-    isSick:f.isSick||false,
-    aufgestandenAt:f.aufgestandenAt||"",schlafenAt:f.schlafenAt||"",
-    gewicht:f.gewicht||"",gewichtTime:f.gewichtTime||"",
-    sys:f.sys||"",dia:f.dia||"",puls:f.puls||"",bpTime:f.bpTime||"",
-    sysPeak:f.sysPeak||"",diaPeak:f.diaPeak||"",pulsPeak:f.pulsPeak||"",bpTimePeak:f.bpTimePeak||"",
-  });
-  // Save ctx/stress tags from medForm into dayCtx
-  const ctxObj={...(d[S.selDate].dayCtx||{}),...(f.ctxTags||{}),...(f.stressTags||{})};
-  d[S.selDate].dayCtx=ctxObj;
+  const f=S.medForm;const day=d[S.selDate];
+  // Einnahmen zusammenstellen: bereits erfasste Liste + evtl. noch offener Composer-Eintrag
+  let list=Array.isArray(f.medications)?[...f.medications]:[];
+  const pend=medComposerPending(f);
+  // Offenen Composer nur übernehmen, wenn er eine echte Uhrzeit trägt ODER noch keine Einnahme erfasst ist
+  // (verhindert Phantom-Einträge durch eine vorausgefüllte Default-Dosis nach „Einnahme hinzufügen“).
+  if(pend&&(pend.takenAt||!list.length)&&!list.some(x=>x.medication===pend.medication&&(x.takenAt||"")===(pend.takenAt||"")))list.push(pend);
+  day.medications=f.isPause?[]:sortMeds(list);
+  day.isPauseDay=f.isPause||false;
+  day.isBaseline=f.isBaseline||false;
+  day.isSick=f.isSick||false;
+  day.aufgestandenAt=f.aufgestandenAt||"";day.schlafenAt=f.schlafenAt||"";
+  day.gewicht=f.gewicht||"";day.gewichtTime=f.gewichtTime||"";
+  day.sys=f.sys||"";day.dia=f.dia||"";day.puls=f.puls||"";day.bpTime=f.bpTime||"";
+  day.sysPeak=f.sysPeak||"";day.diaPeak=f.diaPeak||"";day.pulsPeak=f.pulsPeak||"";day.bpTimePeak=f.bpTimePeak||"";
+  syncDayMedMirror(day);
+  // Ctx-/Stress-Tags (inkl. 🔥 Hitze / ❄️ Kälte) in dayCtx übernehmen
+  const ctxObj={...(day.dayCtx||{}),...(f.ctxTags||{}),...(f.stressTags||{})};
+  day.dayCtx=ctxObj;
   S.data=d;persist(d);set({showMed:false});
 }
 function deleteCheckin(hour){
@@ -535,18 +628,53 @@ function logMedNow(){
   const d=S.data,date=todayStr();
   if(!d[date])d[date]={checkins:{}};
   const s=loadSettings(),day=d[date];
+  if(!Array.isArray(day.medications))day.medications=getDayMeds(day); // bei Bedarf migrieren
   const now=new Date();
   const hh=String(now.getHours()).padStart(2,"0"),mm=String(now.getMinutes()).padStart(2,"0");
-  if(!day.medication)day.medication=s.defaultMed||getMeds()[0]||"Elvanse";
-  if(!day.dosage)day.dosage=s.defaultDosage||"";
-  if(!day.manufacturer&&s.defaultManufacturer)day.manufacturer=s.defaultManufacturer;
-  day.takenAt=`${hh}:${mm}`;day.isPauseDay=false;
-  S.data=d;persist(d);showToast(`✓ ${day.medication} um ${hh}:${mm} geloggt`);render();
+  day.isPauseDay=false;
+  const intake={medication:s.defaultMed||getMeds()[0]||"Elvanse",dosage:s.defaultDosage||"",manufacturer:s.defaultManufacturer||"",takenAt:`${hh}:${mm}`};
+  day.medications.push(intake);
+  day.medications=sortMeds(day.medications);
+  syncDayMedMirror(day);
+  S.data=d;persist(d);showToast(`✓ ${intake.medication} um ${hh}:${mm} geloggt`);render();
 }
 function undoMedNow(){
   const d=S.data,day=d[todayStr()];
-  if(day)day.takenAt="";
+  if(day){
+    if(!Array.isArray(day.medications))day.medications=getDayMeds(day);
+    day.medications=sortMeds(day.medications);
+    day.medications.pop(); // jüngste Einnahme entfernen
+    syncDayMedMirror(day);
+  }
   S.data=d;persist(d);render();
+}
+// Entfernt die i-te (nach Uhrzeit sortierte) Einnahme des heutigen Tages.
+function removeMedIntakeToday(i){
+  const d=S.data,day=d[todayStr()];
+  if(!day)return;
+  if(!Array.isArray(day.medications))day.medications=getDayMeds(day);
+  const sorted=sortMeds(day.medications);
+  sorted.splice(i,1);
+  day.medications=sorted;
+  syncDayMedMirror(day);
+  S.data=d;persist(d);render();
+}
+// Übernimmt die Composer-Eingabe als zusätzliche Einnahme in die Tagesformular-Liste.
+function addMedIntakeFromForm(){
+  const f=S.medForm;
+  const intake=medComposerPending(f);
+  if(!intake){render();return;}
+  f.medications=Array.isArray(f.medications)?f.medications:[];
+  if(!f.medications.some(x=>x.medication===intake.medication&&(x.takenAt||"")===(intake.takenAt||"")))
+    f.medications.push(intake);
+  f.medications=sortMeds(f.medications);
+  f.takenAt="";f.dosage=loadSettings().defaultDosage||""; // Composer für die nächste Folgedosis leeren
+  render();
+}
+function removeMedIntakeForm(i){
+  const f=S.medForm;
+  if(Array.isArray(f.medications)){f.medications=sortMeds(f.medications);f.medications.splice(i,1);}
+  render();
 }
 
 // ── STATS HELPERS ──
@@ -554,10 +682,11 @@ function allCheckins(){return Object.keys(S.data).flatMap(d=>Object.values(S.dat
 function avgStat(id){const v=allCheckins().map(c=>c.symptoms?.[id]).filter(Boolean);return v.length?(v.reduce((a,b)=>a+b,0)/v.length).toFixed(1):"–";}
 function buildDayTimeline(date){
   const day=S.data[date]||{};
+  const doseHours=new Set(getDayMeds(day).map(m=>m.takenAt?parseInt(m.takenAt):null).filter(x=>x!=null));
   return HOURS.map(h=>{
     const c=day.checkins?.[h];const pt={hour:h};
     METRICS.forEach(m=>{if(c?.symptoms?.[m.id])pt[m.id]=c.symptoms[m.id];});
-    pt.events=c?.events||[];pt.hasMed=day.takenAt&&parseInt(day.takenAt)===h;
+    pt.events=c?.events||[];pt.hasMed=doseHours.has(h);
     return pt;
   });
 }
@@ -716,12 +845,15 @@ function generateInsights(){
     const nr=noSportDays.filter(dayRebound).length/noSportDays.length;
     if(nr-sr>0.15)ins.push({type:"pos",icon:"🏃",title:"Sport mindert Rebound",text:`Sporttage: Rebound ${Math.round(sr*100)}%, ohne Sport: ${Math.round(nr*100)}%.`});
   }
-  const stressChecks=Object.keys(S.data).filter(d=>S.data[d]?.dayCtx?.stress).flatMap(d=>Object.values(S.data[d]?.checkins||{}));
-  if(stressChecks.length>2){
-    const su=avg(stressChecks.map(c=>c.symptoms?.unrest).filter(Boolean));
-    const bu=avg(checks.map(c=>c.symptoms?.unrest).filter(Boolean));
-    if(su&&bu&&su-bu>0.4)ins.push({type:"warn",icon:"🔴",title:"Stress erhöht Innere Unruhe",text:`An Stresstagen ist Unruhe Ø ${(su-bu).toFixed(1)} Punkte höher.`});
-  }
+  // Kontext & Situation: stärksten Einfluss je Tag als Schlüssel-Insight hervorheben (deckt ALLE Tags ab)
+  getContextImpact().forEach(ci=>{
+    const m=ci.metrics.slice().sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta))[0];
+    if(!m||Math.abs(m.delta)<0.5)return; // nur deutliche Effekte werden zur Headline
+    const good=ctxDeltaIsGood(m),dir=m.delta>0?"höher":"niedriger";
+    ins.push({type:good?"pos":"warn",icon:ci.label.split(" ")[0],
+      title:`${ci.label}: ${m.label} ${dir}`,
+      text:`An ${ci.nDays} Tagen mit „${ci.label}“ liegt ${m.label} Ø ${(m.delta>0?"+":"")}${m.delta.toFixed(1)} Punkte ${good?"günstiger":"ungünstiger"} (${m.tagged.toFixed(1)} vs. ${m.baseline.toFixed(1)} sonst).`});
+  });
   const sortedDays=[...Object.keys(S.data)].sort();
   const sleepTagImpact={};SLEEP_TAGS.forEach(t=>{sleepTagImpact[t.id]=[];});
   sortedDays.forEach((date,i)=>{
@@ -888,6 +1020,41 @@ function generateInsights(){
   return ins;
 }
 
+// ── Kontext & Situation: Einfluss aller Tags auf die Kernmetriken (Fokus/Stimmung/Unruhe) ──
+// A/B-Vergleich: Tage MIT einem Tag vs. Tage OHNE diesen Tag, alle Check-ins gepoolt.
+// Nur Tags mit belastbarer Datenbasis (≥2 Tage je Gruppe, ≥3 Messwerte je Metrik).
+const CTX_IMPACT_METRICS=[
+  {id:"focus",icon:"🎯",label:"Fokus",inv:false},
+  {id:"mood",icon:"😊",label:"Stimmung",inv:false},
+  {id:"unrest",icon:"⚡",label:"Unruhe",inv:true},
+];
+function getContextImpact(){
+  const TAGS=[...CTX_TAGS,...STRESS_TAGS];
+  const dates=Object.keys(S.data);
+  const out=[];
+  TAGS.forEach(t=>{
+    const tagged=[],untag=[];let nT=0,nU=0;
+    dates.forEach(d=>{
+      const day=S.data[d];if(!day)return;
+      const cks=Object.values(day.checkins||{});if(!cks.length)return;
+      if(day.dayCtx&&day.dayCtx[t.id]){nT++;tagged.push(...cks);}else{nU++;untag.push(...cks);}
+    });
+    if(nT<2||nU<2)return; // zu wenige Tage für einen sinnvollen Vergleich
+    const metrics=CTX_IMPACT_METRICS.map(m=>{
+      const tv=tagged.map(c=>c.symptoms?.[m.id]).filter(Boolean);
+      const uv=untag.map(c=>c.symptoms?.[m.id]).filter(Boolean);
+      if(tv.length<3||uv.length<3)return null;
+      return{...m,delta:avg(tv)-avg(uv),tagged:avg(tv),baseline:avg(uv)};
+    }).filter(Boolean);
+    if(!metrics.length)return;
+    out.push({id:t.id,label:t.label,nDays:nT,metrics,sortKey:Math.max(...metrics.map(m=>Math.abs(m.delta)))});
+  });
+  return out.sort((a,b)=>b.sortKey-a.sortKey); // stärkster Einfluss zuerst
+}
+// Ist eine Veränderung günstig? Bei inv-Metriken (Unruhe/Impulsivität) ist „weniger“ besser.
+function ctxDeltaIsGood(m){return m.inv?m.delta<0:m.delta>0;}
+function ctxDeltaColor(m){return Math.abs(m.delta)<0.15?"var(--muted)":(ctxDeltaIsGood(m)?"var(--green)":"var(--red)");}
+
 // ── SVG GRAPHS ──
 function buildDayGraph(date,selectedMetrics){
   const W=360,ICON_H=34,H=202,PAD={t:ICON_H+14,r:10,b:28,l:28};
@@ -905,7 +1072,12 @@ function buildDayGraph(date,selectedMetrics){
   }
   for(let v=1;v<=5;v++){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
   for(let h=4;h<=24;h+=4){const x=xOf(h);svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#1e2840" stroke-width="1"/><text x="${x}" y="${H-4}" text-anchor="middle" font-size="9" fill="#5a6890">${h}h</text>`;}
-  if(day.takenAt){const x=xOf(parseFloat(day.takenAt.replace(":",".").replace(/(\d+):(\d+)/,(a,h,m)=>+h+m/60)));svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#c084fc" stroke-width="2" stroke-dasharray="4,3"/><text x="${x+3}" y="${PAD.t+22}" font-size="9" fill="#c084fc">💊</text>`;}
+  getDayMeds(day).forEach(dose=>{
+    if(!dose.takenAt)return;
+    const hv=hhmmToH(dose.takenAt);if(hv==null)return;
+    const x=xOf(hv);
+    svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#c084fc" stroke-width="2" stroke-dasharray="4,3"/><text x="${x+3}" y="${PAD.t+22}" font-size="9" fill="#c084fc">💊</text>`;
+  });
   selectedMetrics.forEach(mid=>{
     const m=METRICS.find(x=>x.id===mid);if(!m)return;
     const dp=pts.filter(p=>p[mid]!=null).map(p=>({x:xOf(p.hour),y:yOf(p[mid])}));
@@ -970,12 +1142,22 @@ function buildTrendGraph(metricId,days=14){
     const marks=[];
     if(ctx.stress)marks.push("stress");
     if(ctx.arbeit)marks.push("arbeit");
+    if(ctx.hitze)marks.push("hitze");
+    if(ctx.kaelte)marks.push("kaelte");
+    if(ctx.bildschirm)marks.push("bildschirm");
+    if(ctx.trinken)marks.push("trinken");
+    if(ctx.routine)marks.push("routine");
     if(dd?.medication&&!dd?.isPauseDay)marks.push("med");
     marks.forEach((mk,j)=>{
       const my=y-8-j*7;
-      if(mk==="stress")svg+=`<circle cx="${x}" cy="${my}" r="2.7" fill="#ff7070"/>`;                                  // 🔴 Stress = Kreis
-      else if(mk==="arbeit")svg+=`<rect x="${x-2.5}" y="${my-2.5}" width="5" height="5" rx="1" fill="#56B4E9"/>`;       // 🟦 Arbeit = Quadrat
-      else if(mk==="med")svg+=`<path d="M${x},${my-3.2} L${x+3.2},${my} L${x},${my+3.2} L${x-3.2},${my} Z" fill="#c084fc"/>`; // 🟣 Medikament = Raute
+      if(mk==="stress")svg+=`<circle cx="${x}" cy="${my}" r="2.7" fill="#ff7070"/>`;                                  // 🔴 Stress = Kreis ●
+      else if(mk==="arbeit")svg+=`<rect x="${x-2.5}" y="${my-2.5}" width="5" height="5" rx="1" fill="#56B4E9"/>`;       // 🟦 Arbeit = Quadrat ■
+      else if(mk==="hitze")svg+=`<path d="M${x},${my-3.4} L${x+3.2},${my+2.6} L${x-3.2},${my+2.6} Z" fill="#D55E00"/>`; // 🔥 Hitze = Dreieck ▲
+      else if(mk==="kaelte")svg+=`<path d="M${x},${my+3.4} L${x+3.2},${my-2.6} L${x-3.2},${my-2.6} Z" fill="#0072B2"/>`;// ❄️ Kälte = Dreieck ▼
+      else if(mk==="bildschirm")svg+=`<rect x="${x-2.5}" y="${my-2.5}" width="5" height="5" rx="1" fill="none" stroke="#CC79A7" stroke-width="1.4"/>`; // 📱 Bildschirm = leeres Quadrat □
+      else if(mk==="trinken")svg+=`<path d="M${x},${my-3.3} C${x+2.6},${my-0.3} ${x+2.2},${my+3} ${x},${my+3} C${x-2.2},${my+3} ${x-2.6},${my-0.3} ${x},${my-3.3} Z" fill="#E69F00"/>`; // 💧 Zu wenig getrunken = Tropfen
+      else if(mk==="routine")svg+=`<path d="M${x-3},${my+0.2} L${x-1},${my+2.6} L${x+3},${my-2.8}" fill="none" stroke="#009E73" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`; // ✅ Routine = Haken ✓
+      else if(mk==="med")svg+=`<path d="M${x},${my-3.2} L${x+3.2},${my} L${x},${my+3.2} L${x-3.2},${my} Z" fill="#c084fc"/>`; // 🟣 Medikament = Raute ◆
     });
   });
   const step=n>16?Math.ceil(n/8):2;
@@ -1017,7 +1199,7 @@ function buildTrendGraph(metricId,days=14){
 
 function buildBodyGraph(series,yMin,yMax,rangeKey){
   const W=360,H=140,PAD={t:8,r:10,b:24,l:36};const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
-  const dates=getBodySeries(rangeKey);if(dates.length<2)return"";
+  const dates=getBodySeries(rangeKey).slice().reverse();if(dates.length<2)return""; // Punkt 4: neueste links
   function xOf(i){return PAD.l+(i/(dates.length-1))*gW;}
   function yOf(v){return PAD.t+gH-((v-yMin)/(yMax-yMin))*gH;}
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
@@ -1044,7 +1226,7 @@ function bpHasPeak(rangeKey){
 function buildBPCompareGraph(rangeKey,pairs,opts){
   opts=opts||{};
   const W=360,H=opts.h||176,PAD={t:8,r:10,b:26,l:34};const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
-  const dates=getBodySeries(rangeKey);if(dates.length<2)return"";
+  const dates=getBodySeries(rangeKey).slice().reverse();if(dates.length<2)return""; // Punkt 4: neueste links
   const BASE="#56B4E9",PEAK="#E69F00",LINK="#5a6890";
   const keys=[];pairs.forEach(p=>{keys.push(p.base,p.peak);});
   const allV=[];dates.forEach(d=>keys.forEach(k=>{const v=bpVal(d,k);if(v!=null)allV.push(v);}));
@@ -1186,10 +1368,10 @@ function showToast(msg){const t=el("div",{class:"toast"},msg);document.body.appe
 function trendFactorsForDate(date){
   const dd=S.data[date];if(!dd)return[];
   const ctx=dd.dayCtx||{},f=[];
-  if(ctx.stress)f.push("🔴 Viel Stress");
-  if(ctx.arbeit)f.push("🏢 Arbeitstag");
-  CTX_TAGS.filter(t=>t.id!=="arbeit"&&ctx[t.id]).forEach(t=>f.push(t.label));
-  if(dd.medication&&!dd.isPauseDay)f.push(`💊 ${dd.medication}${dd.dosage?" "+dd.dosage:""}${dd.takenAt?" · "+dd.takenAt:""}`);
+  // ALLE aktiven Kontext-/Situations-Tags anzeigen (Situation zuerst, dann Kontext) – keine Lücken mehr
+  [...STRESS_TAGS,...CTX_TAGS].forEach(t=>{if(ctx[t.id])f.push(t.label);});
+  const doses=getDayMeds(dd);
+  if(doses.length&&!dd.isPauseDay)doses.forEach(m=>f.push(`💊 ${m.medication}${m.dosage?" "+m.dosage:""}${m.takenAt?" · "+m.takenAt:""}`));
   else if(dd.isPauseDay)f.push("⏸ Medikations-Pause");
   const cks=Object.values(dd.checkins||{});
   if(cks.some(c=>c.healthFlags?.sport))f.push("💪 Sport gemacht");
@@ -1612,7 +1794,21 @@ function renderMedModal(){
       isPause?"🟠 Medikations-Pause aktiv – tippen zum Deaktivieren":"⏸ Heute Medikations-Pause"),
     // Medication fields (hidden on pause)
     el("div",{style:{opacity:isPause?"0.35":"1",pointerEvents:isPause?"none":"all"}},
-      el("span",{class:"card-label"},"Medikament"),
+      // Liste bereits erfasster Einnahmen des Tages (Mehrfacheinnahme / Folgedosen)
+      (()=>{
+        const list=sortMeds(f.medications||[]);
+        if(!list.length)return null;
+        const totalMg=list.reduce((s,m)=>s+parseMg(m.dosage),0);
+        return el("div",{style:{marginBottom:"12px"}},
+          el("span",{class:"card-label"},`💊 Einnahmen heute (${list.length})`),
+          ...list.map((m,i)=>el("div",{class:"med-list-item"},
+            el("div",{class:"med-list-label"},`${m.takenAt||"–:–"} · ${m.medication}${m.dosage?" · "+m.dosage+" mg":""}${m.manufacturer?" · "+m.manufacturer:""}`),
+            el("button",{class:"med-del-btn",onClick:()=>removeMedIntakeForm(i)},"−")
+          )),
+          totalMg>0?el("div",{style:{fontSize:"12px",color:"var(--accentL)",marginTop:"6px"}},`Σ Tagesdosis: ${totalMg} mg`):null
+        );
+      })(),
+      el("span",{class:"card-label"},(f.medications&&f.medications.length)?"➕ Weitere Einnahme":"Medikament"),
       (()=>{const sel=document.createElement("select");meds.forEach(m=>{const o=document.createElement("option");o.value=m;o.textContent=m;if(f.medication===m)o.selected=true;sel.appendChild(o);});sel.onchange=e=>{if(e.target.value)S.medForm.medication=e.target.value;render();};return sel;})(),
       settings.medTherapy?[
         el("span",{class:"card-label",style:{marginTop:"10px"}},"Hersteller"),
@@ -1622,6 +1818,7 @@ function renderMedModal(){
       (()=>{const inp=document.createElement("input");inp.placeholder="z.B. 30, 50, 70";inp.value=f.dosage;inp.oninput=e=>S.medForm.dosage=e.target.value;return inp;})(),
       el("span",{class:"card-label",style:{marginTop:"10px"}},"Einnahmezeit"),
       (()=>{const inp=document.createElement("input");inp.type="time";inp.value=f.takenAt;inp.onchange=e=>{S.medForm.takenAt=e.target.value;render();};return inp;})(),
+      el("button",{class:"btn sm ghost-sm",style:{marginTop:"10px",width:"100%"},onClick:addMedIntakeFromForm},"➕ Einnahme hinzufügen"),
       ts?el("div",{style:{marginTop:"10px"}},
         el("button",{class:"ctx-tag"+(f.isBaseline?" stress-on":""),onClick:()=>{S.medForm.isBaseline=!S.medForm.isBaseline;render();}},"⚡ Als Baseline markieren")
       ):null,
@@ -1664,14 +1861,17 @@ function renderMedModal(){
         vInp("Puls","number","puls","bpm"),vInp("Uhrzeit","time","bpTime")
       ),
       (()=>{
-        const takenAt=f.takenAt||day.takenAt;
+        // Wirkungshöhepunkt auf Basis der ERSTEN Einnahme des Tages (kumulierte Mehrfacheinnahme → Basis = erste Dosis)
+        const intakes=sortMeds([...(f.medications||[])]);
+        const base=intakes[0]||{medication:f.medication,manufacturer:f.manufacturer,takenAt:f.takenAt};
+        const takenAt=base.takenAt||f.takenAt||day.takenAt;
         if(isPause||!takenAt)return null;
-        const eff=getEffectiveMedDuration(f.medication||day.medication,f.manufacturer||day.manufacturer);
+        const eff=getEffectiveMedDuration(base.medication||f.medication||day.medication,base.manufacturer||f.manufacturer||day.manufacturer);
         const peakOffH=Math.min(4,Math.max(2,eff.h*0.3)); // Wirkungshöhepunkt ~2–4h nach Einnahme
         const[ph0,pm0]=takenAt.split(":").map(Number);
         let pk=(ph0*60+(pm0||0)+Math.round(peakOffH*60))%1440;
         const pkStr=`${String(Math.floor(pk/60)).padStart(2,"0")}:${String(pk%60).padStart(2,"0")}`;
-        return el("div",{class:"peak-hint"},`💡 Dein Wirkungshöhepunkt ist voraussichtlich um ${pkStr} Uhr (~${peakOffH.toFixed(1)} h nach Einnahme um ${takenAt}). Bitte miss dann deinen Blutdruck.`);
+        return el("div",{class:"peak-hint"},`💡 Dein Wirkungshöhepunkt ist voraussichtlich um ${pkStr} Uhr (~${peakOffH.toFixed(1)} h nach der ersten Einnahme um ${takenAt}). Bitte miss dann deinen Blutdruck.`);
       })(),
       el("div",{class:"bp-sub peak"},"🟠 Zum Wirkungshöhepunkt"),
       el("div",{class:"vital-row",style:{gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))"}},
@@ -1732,27 +1932,41 @@ function renderSettingsModal(){
 // ── TODAY VIEW ──
 function renderToday(){
   const date=S.selDate,day=S.data[date]||{},checkins=day.checkins||{};
-  const wrap=el("div",{});const last7=getLast7();
-  const strip=el("div",{class:"date-strip"},...last7.map(d=>{
-    const dt=new Date(d+"T12:00");const hasData=Object.keys(S.data[d]?.checkins||{}).length>0;const isAct=d===S.selDate;
-    return el("button",{class:"date-pill"+(isAct?" active":hasData?" has-data":""),onClick:()=>set({selDate:d})},
+  const wrap=el("div",{});
+  const allDates=buildDateRange().slice().reverse(); // Punkt 4 + 5: lückenlos, neueste links
+  let activePill=null;
+  const strip=el("div",{class:"date-strip"},...allDates.map(d=>{
+    const dt=new Date(d+"T12:00");const hasData=hasAnyDayData(d);const isAct=d===S.selDate;
+    const pill=el("button",{class:"date-pill"+(isAct?" active":hasData?" has-data":""),onClick:()=>set({selDate:d})},
       el("div",{class:"date-pill-dow"},dt.toLocaleDateString("de-DE",{weekday:"short"})),
       el("div",{class:"date-pill-day"},String(dt.getDate())),
       hasData?el("div",{class:"date-pill-dot"}):el("div",{style:{height:"7px"}})
     );
+    if(isAct)activePill=pill;
+    return pill;
   }));
-  const medBtn=el("button",{class:"med-btn"+(day.medication||day.isPauseDay?" has-med":""),onClick:()=>{
+  // Punkt 3: ausgewähltes (auch historisches) Datum nach dem Rendern horizontal mittig platzieren
+  if(activePill)requestAnimationFrame(()=>{
+    if(!activePill.isConnected||!strip.isConnected)return;
+    const sRect=strip.getBoundingClientRect(),pRect=activePill.getBoundingClientRect();
+    const delta=(pRect.left-sRect.left)-(strip.clientWidth-activePill.offsetWidth)/2;
+    if(Math.abs(delta)>2)strip.scrollTo({left:strip.scrollLeft+delta,behavior:"smooth"});
+  });
+  const dayDoses=getDayMeds(day);
+  const medBtn=el("button",{class:"med-btn"+(dayDoses.length||day.isPauseDay?" has-med":""),onClick:()=>{
     const existCtx={};CTX_TAGS.forEach(t=>{if(day.dayCtx?.[t.id])existCtx[t.id]=true;});
     const existStress={};STRESS_TAGS.forEach(t=>{if(day.dayCtx?.[t.id])existStress[t.id]=true;});
-    const f={medication:day.medication||"Elvanse",dosage:day.dosage||"",takenAt:day.takenAt||"",manufacturer:day.manufacturer||"",
+    const s=loadSettings();
+    const f={medication:day.medication||s.defaultMed||getMeds()[0]||"Elvanse",dosage:"",takenAt:"",manufacturer:day.manufacturer||s.defaultManufacturer||"",
+      medications:dayDoses.map(m=>({...m})),
       isBaseline:day.isBaseline||false,isPause:day.isPauseDay||false,isSick:day.isSick||false,
       aufgestandenAt:day.aufgestandenAt||"",schlafenAt:day.schlafenAt||"",
       gewicht:day.gewicht||"",gewichtTime:day.gewichtTime||"",sys:day.sys||"",dia:day.dia||"",puls:day.puls||"",bpTime:day.bpTime||"",
       sysPeak:day.sysPeak||"",diaPeak:day.diaPeak||"",pulsPeak:day.pulsPeak||"",bpTimePeak:day.bpTimePeak||"",
       ctxTags:existCtx,stressTags:existStress};
     set({showMed:true,medForm:f});
-  }},day.isPauseDay?"⏸ Pause":day.medication?`💊 ${day.medication} ${day.dosage}`:"+ Tagesformular");
-  if(day.isBaseline&&day.medication){medBtn.innerHTML="";medBtn.appendChild(document.createTextNode(`💊 ${day.medication} `));medBtn.appendChild(el("span",{class:"baseline-badge"},"Baseline"));}
+  }},day.isPauseDay?"⏸ Pause":dayDoses.length?(`💊 ${dayDoses[0].medication} ${dayDoses[0].dosage||""}`.trim()+(dayDoses.length>1?` +${dayDoses.length-1}`:"")):"+ Tagesformular");
+  if(day.isBaseline&&dayDoses.length){medBtn.innerHTML="";medBtn.appendChild(document.createTextNode(`💊 ${dayDoses[0].medication} `));if(dayDoses.length>1)medBtn.appendChild(document.createTextNode(`+${dayDoses.length-1} `));medBtn.appendChild(el("span",{class:"baseline-badge"},"Baseline"));}
   const topbarRow=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}});
   topbarRow.appendChild(el("div",{class:"topbar-logo"},logoSvg(28),el("h1",{style:{fontSize:"22px"}},date===todayStr()?"Heute":fmtDateS(date))));
   topbarRow.appendChild(el("div",{style:{display:"flex",gap:"8px",alignItems:"center"}},medBtn,el("button",{style:{background:"none",border:"none",color:"var(--muted)",cursor:"pointer",fontSize:"22px",padding:"4px"},onClick:()=>set({showSettings:true})},"⚙️")));
@@ -1762,18 +1976,23 @@ function renderToday(){
     sec.appendChild((()=>{
       const s=loadSettings();
       const med=day.medication||s.defaultMed||getMeds()[0]||"Elvanse";
-      const dose=day.dosage||s.defaultDosage||"";
+      const dose=s.defaultDosage||"";
       if(day.isPauseDay){return el("div",{class:"quick-med pause"},"⏸ Heute Medikations-Pause");}
-      if(!day.takenAt){
+      const doses=getDayMeds(day);
+      if(!doses.length){
         const card=el("div",{class:"quick-med"});
         card.appendChild(el("button",{class:"quick-med-btn",onClick:logMedNow},`💊 ${med}${dose?" "+dose:""} jetzt genommen`));
         card.appendChild(el("div",{class:"quick-med-sub"},"Tippen speichert die aktuelle Uhrzeit"));
         return card;
       }
-      const [th,tm]=day.takenAt.split(":").map(Number);
+      // Eine ODER mehrere Einnahmen: Liste + kumulierte Tagesdosis + Live-Countdown auf die JÜNGSTE Einnahme
+      const {totalMg}=dayDoseSummary(day);
+      const last=doses[doses.length-1];
+      const lastMed=last.medication||med,lastDose=last.dosage||"",lastMfr=last.manufacturer||"";
+      const [th,tm]=(last.takenAt||"0:0").split(":").map(Number);
       const takenMin=th*60+(tm||0);
       const now=new Date(),nowMin=now.getHours()*60+now.getMinutes();
-      const eff=getEffectiveMedDuration(med,day.manufacturer);
+      const eff=getEffectiveMedDuration(lastMed,lastMfr);
       const durMin=eff.h*60;
       let elapsed=nowMin-takenMin;if(elapsed<0)elapsed+=1440;
       const remaining=durMin-elapsed;
@@ -1784,8 +2003,16 @@ function renderToday(){
       const card=el("div",{class:"quick-med taken"+(phase==="rebound-soon"?" warn":phase==="ended"?" ended":"")});
       card.appendChild(el("div",{class:"quick-med-head"},
         el("span",{class:"qm-check"},"✓"),
-        el("span",{},`${med}${dose?" "+dose:""} · genommen um ${day.takenAt}`),
-        el("button",{class:"qm-undo",onClick:undoMedNow},"Rückgängig")));
+        el("span",{},`${doses.length} Einnahme${doses.length>1?"n":""} heute${totalMg>0?` · Σ ${totalMg} mg`:""}`),
+        el("button",{class:"qm-undo",onClick:undoMedNow},"Letzte rückgängig")));
+      // Liste aller Einnahmen mit Lösch-Buttons
+      const listWrap=el("div",{style:{margin:"4px 0 8px"}});
+      doses.forEach((m,i)=>listWrap.appendChild(el("div",{class:"med-list-item",style:{padding:"5px 10px"}},
+        el("div",{class:"med-list-label"},`${m.takenAt||"–:–"} · ${m.medication}${m.dosage?" · "+m.dosage+" mg":""}${m.manufacturer?" · "+m.manufacturer:""}`),
+        el("button",{class:"med-del-btn",onClick:()=>removeMedIntakeToday(i)},"−"))));
+      card.appendChild(listWrap);
+      // Live-Countdown auf die jüngste Einnahme
+      card.appendChild(el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"3px"}},`⏱ Wirkfenster der letzten Einnahme (${lastMed}${lastDose?" "+lastDose:""} um ${last.takenAt})`));
       card.appendChild(el("div",{class:"peak-bar"},el("div",{class:"peak-fill "+phase,style:{width:pct+"%"}})));
       const fmtRem=min=>{const h=Math.floor(min/60),m=min%60;return(h?h+"h ":"")+m+"m";};
       let txt;
@@ -1793,8 +2020,9 @@ function renderToday(){
       else if(phase==="rebound-soon")txt=`⚠️ Rebound-Fenster beginnt bald (~${endStr}). Plane für die nächste Stunde nichts Komplexes.`;
       else txt=`Wirkfenster beendet (~${endStr}) · Rebound möglich – kurz durchatmen.`;
       card.appendChild(el("div",{class:"peak-text "+phase},txt));
-      const srcLbl={"präparat":"manuell"+(day.manufacturer?" · "+day.manufacturer:""),"gelernt-präparat":`aus deinen Daten · n=${eff.n}${day.manufacturer?" · "+day.manufacturer:""}`,"med":"manuell","gelernt":`aus deinen Daten · n=${eff.n}`,"standard":"Standardwert"}[eff.src];
+      const srcLbl={"präparat":"manuell"+(lastMfr?" · "+lastMfr:""),"gelernt-präparat":`aus deinen Daten · n=${eff.n}${lastMfr?" · "+lastMfr:""}`,"med":"manuell","gelernt":`aus deinen Daten · n=${eff.n}`,"standard":"Standardwert"}[eff.src];
       card.appendChild(el("div",{style:{fontSize:"10px",color:"var(--muted)",opacity:".8",marginTop:"3px"}},`⏱ Wirkdauer ~${eff.h} h · ${srcLbl}`));
+      card.appendChild(el("button",{class:"btn sm ghost-sm",style:{marginTop:"10px",width:"100%"},onClick:logMedNow},"➕ Weitere Einnahme jetzt"));
       return card;
     })());
   }
@@ -1807,19 +2035,20 @@ function renderToday(){
       )
     ));
   }
+  const doseHours=new Set(getDayMeds(day).map(m=>m.takenAt?parseInt(m.takenAt):null).filter(x=>x!=null));
   const tl=el("div",{class:"timeline-scroll"},el("div",{class:"timeline-row"},...HOURS.map(h=>{
     const c=checkins[h],hasSym=c&&Object.keys(c.symptoms||{}).length>0,hasEv=c&&(c.events||[]).length>0;
     const focus=c?.symptoms?.focus,col=hasSym&&focus?ratingColor(focus,false):hasEv?"var(--orange)":null;
     const isNow=date===todayStr()&&h===nowHour();
     const circle=el("div",{class:"hour-circle",style:isNow?{border:"2px solid var(--accentL)",color:"var(--accentL)"}:col?{border:`2px solid ${col}`,background:col+"22",color:col}:{}},focus||(hasEv?"·":""));
-    if(day.takenAt&&parseInt(day.takenAt)===h)circle.appendChild(el("span",{class:"med-badge"},"💊"));
+    if(doseHours.has(h))circle.appendChild(el("span",{class:"med-badge"},"💊"));
     return el("div",{class:"hour-dot",onClick:()=>openCheckin(h)},circle,el("div",{class:"hour-label"},h+"h"));
   })));
   sec.appendChild(el("div",{class:"card"},
     el("span",{class:"card-label"},"Tagesverlauf – tippe eine Stunde an"),tl,
     el("div",{style:{display:"flex",gap:"14px",marginTop:"10px"}},...[["Ausgefüllt","var(--green)"],["Jetzt","var(--accentL)"],["Leer","var(--dim)"]].map(([l,c])=>el("div",{style:{display:"flex",alignItems:"center",gap:"5px"}},el("div",{style:{width:"8px",height:"8px",borderRadius:"50%",background:c}}),el("span",{style:{fontSize:"10px",color:"var(--muted)"}},l))))
   ));
-  const entries=Object.entries(checkins).sort((a,b)=>+a[0]-+b[0]);
+  const entries=Object.entries(checkins).sort((a,b)=>+b[0]-+a[0]); // Punkt 4: neueste Stunde oben
   if(entries.length){
     sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Einträge"),
       ...entries.map(([h,c])=>{
@@ -1864,8 +2093,8 @@ function renderHistory(){
           el("div",{style:{fontWeight:"600",fontSize:"15px"}},fmtDateS(date),
             d?.isBaseline?el("span",{class:"baseline-badge"},"Baseline"):null,
             d?.isPauseDay?el("span",{class:"baseline-badge",style:{background:"rgba(253,186,116,.15)",borderColor:"rgba(253,186,116,.4)",color:"var(--orange)"}},"Pause"):null),
-          d?.medication?el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},`💊 ${d.medication} ${d.dosage}${d.takenAt?" · "+d.takenAt+"h":""}`):null,
-          el("div",{style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[d?.gewicht?`⚖️ ${d.gewicht}kg`:"",d?.sys?`❤️ ${d.sys}/${d.dia}`:"",dur?`😴 ${dur.toFixed(1)}h`:"",d?.dayCtx?.stress?"🔴 Stress":"",hasSport?"🏃 Sport":""].filter(Boolean).join("  "))
+          (()=>{const dd=getDayMeds(d);if(!dd.length)return null;const sum=dayDoseSummary(d);return el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"2px"}},`💊 ${dd[0].medication} ${dd[0].dosage||""}${dd[0].takenAt?" · "+dd[0].takenAt+"h":""}`+(dd.length>1?` (+${dd.length-1} weitere · Σ ${sum.totalMg} mg)`:""));})(),
+          el("div",{style:{fontSize:"11px",color:"var(--muted)",marginTop:"2px"}},[d?.gewicht?`⚖️ ${d.gewicht}kg`:"",d?.sys?`❤️ ${d.sys}/${d.dia}`:"",dur?`😴 ${dur.toFixed(1)}h`:"",d?.dayCtx?.stress?"🔴 Stress":"",d?.dayCtx?.hitze?"🔥 Hitze":"",d?.dayCtx?.kaelte?"❄️ Kälte":"",hasSport?"🏃 Sport":""].filter(Boolean).join("  "))
         ),
         dayAvg?el("div",{style:{textAlign:"center"}},el("div",{style:{fontSize:"22px",fontWeight:"800",color:ratingColor(+dayAvg,false)}},dayAvg),el("div",{style:{fontSize:"9px",color:"var(--muted)"}},"Ø Fokus")):null
       ),
@@ -1902,13 +2131,13 @@ function renderStats(){
       if(!enoughDays)sec.appendChild(el("div",{style:{textAlign:"center",padding:"30px 0",color:"var(--muted)"}},"Noch zu wenig Tage für den Verlauf."));
       else{
         const days=S.graphRange==="week"?7:30;
-        sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},`Verlauf – letzte ${days} Tage`),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"Linie = jeweilige Metrik · 💚 Schlafdauer-Fläche (4–10h, rechte Achse)"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"Am Punkt: 🔴 Stress (Kreis) · 🟦 Arbeit (Quadrat) · 🟣 Medikament (Raute) · Tag antippen für Details"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"Unten: 🟣 ELV/MPH/CON… = Medikament-Kürzel · –P– = Pause"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"8px",lineHeight:"1.7"}},"🦵 Schmerz · 💪 Sport · 💊 Ibuprofen · 😪 Kurzschlaf <6h · grau‒‒ = Datenlücke"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildTrendGraph(mid,days)));})));
+        sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},`Verlauf – letzte ${days} Tage`),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"Linie = jeweilige Metrik · 💚 Schlafdauer-Fläche (4–10h, rechte Achse)"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"Am Punkt: 🔴 Stress (●) · 🟦 Arbeit (■) · 📱 Bildschirm (□) · 💧 Wenig getrunken (Tropfen) · ✅ Routine (Haken) · 🔥 Hitze (▲) · ❄️ Kälte (▼) · 🟣 Medikament (◆) · Tag antippen für Details"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"4px",lineHeight:"1.7"}},"Unten: 🟣 ELV/MPH/CON… = Medikament-Kürzel · –P– = Pause"),el("div",{style:{fontSize:"10px",color:"var(--muted)",marginBottom:"8px",lineHeight:"1.7"}},"🦵 Schmerz · 💪 Sport · 💊 Ibuprofen · 😪 Kurzschlaf <6h · grau‒‒ = Datenlücke"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildTrendGraph(mid,days)));})));
         const sleepSvg=buildSleepTrendGraph(days);
         if(sleepSvg)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"😴 Schlafzeiten – Verlauf"),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px"}},"Stunden pro Nacht"),svgEl(sleepSvg)));
         sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Ø Wirkungsverlauf über den Tag"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildHourlyGraph(mid)));})));
       }
     } else {
-      sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Jahresverlauf – letzte 12 Monate"),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"8px"}},"Ø pro Monat (1–5) · leerer Balken = keine Daten"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildBarGraph(buildMonthlyTrendData(mid),m.color)));})));
+      sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Jahresverlauf – letzte 12 Monate"),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"8px"}},"Ø pro Monat (1–5) · leerer Balken = keine Daten"),...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{style:{marginBottom:"16px"}},el("div",{style:{fontSize:"13px",fontWeight:"600",color:m.color,marginBottom:"6px"}},`${m.icon} ${m.label}`),svgEl(buildBarGraph(buildMonthlyTrendData(mid).slice().reverse(),m.color)));})));
     }
   }
 
@@ -1956,13 +2185,13 @@ function renderStats(){
     const ranges=[["week","7 Tage"],["month","30 Tage"],["year","12 Mo"]];
     sec.appendChild(el("div",{class:"seg"},...ranges.map(([k,l])=>el("button",{class:"seg-btn"+(S.symptomRange===k?" active":""),onClick:()=>set({symptomRange:k})},l))));
     const ibuData=getIbuWeekly();
-    if(ibuData.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"💊 Ibuprofen-Konsum (mg / Woche)"),svgEl(buildBarGraph(ibuData.map(i=>({label:i.label,value:i.value})),"#ff7070")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`Gesamt: ${ibuData.reduce((a,i)=>a+i.value,0)} mg`)));
+    if(ibuData.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"💊 Ibuprofen-Konsum (mg / Woche)"),svgEl(buildBarGraph(ibuData.map(i=>({label:i.label,value:i.value})).reverse(),"#ff7070")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`Gesamt: ${ibuData.reduce((a,i)=>a+i.value,0)} mg`)));
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"💊 Ibuprofen"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Noch keine Daten.")));
     const gelenkData=getJointPainFreq(S.symptomRange);const gelenkItems=gelenkData.filter(d=>d.count>0);
-    if(gelenkItems.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🦵 Gelenkschmerzen – Häufigkeit"),svgEl(buildBarGraph(gelenkData.map(d=>({label:fmtDateXS(d.date),value:d.count})),"#fdba74")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`${gelenkItems.length} Tag(e) im Zeitraum`)));
+    if(gelenkItems.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🦵 Gelenkschmerzen – Häufigkeit"),svgEl(buildBarGraph(gelenkData.map(d=>({label:fmtDateXS(d.date),value:d.count})).reverse(),"#fdba74")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`${gelenkItems.length} Tag(e) im Zeitraum`)));
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🦵 Gelenkschmerzen"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Keine Daten im Zeitraum.")));
     const verdauData=getSymptomFreq("verdauung",S.symptomRange);const verdauItems=verdauData.filter(d=>d.count>0);
-    if(verdauItems.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🪠 Verdauungsprobleme – Häufigkeit"),svgEl(buildBarGraph(verdauData.map(d=>({label:fmtDateXS(d.date),value:d.count})),"#c084fc")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`${verdauItems.length} Tag(e) im Zeitraum`)));
+    if(verdauItems.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🪠 Verdauungsprobleme – Häufigkeit"),svgEl(buildBarGraph(verdauData.map(d=>({label:fmtDateXS(d.date),value:d.count})).reverse(),"#c084fc")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`${verdauItems.length} Tag(e) im Zeitraum`)));
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"🪠 Verdauungsprobleme"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Keine Daten.")));
     // Pain location sub-graphs
     const keyLocs=[{id:"knie_l",label:"Knie links"},{id:"knie_r",label:"Knie rechts"},{id:"nacken",label:"Nacken"},{id:"ruecken",label:"Rücken"},{id:"huefte",label:"Hüfte"},{id:"schulter_l",label:"Schulter links"},{id:"schulter_r",label:"Schulter rechts"}];
@@ -1975,7 +2204,7 @@ function renderStats(){
       hasAnyLocData=true;
       locCard.appendChild(el("div",{style:{marginBottom:"12px"}},
         el("div",{style:{fontSize:"13px",fontWeight:"600",color:"var(--red)",marginBottom:"4px"}},`🎯 ${loc.label}`),
-        svgEl(buildBarGraph(locData.map(d=>({label:fmtDateXS(d.date),value:d.count})),"var(--red)")),
+        svgEl(buildBarGraph(locData.map(d=>({label:fmtDateXS(d.date),value:d.count})).reverse(),"var(--red)")),
         el("div",{style:{fontSize:"11px",color:"var(--muted)"}},`${locItems.length} Tag(e) betroffen`)
       ));
     });
@@ -1991,6 +2220,30 @@ function renderStats(){
     const ins=generateInsights();
     if(!ins.length)sec.appendChild(el("div",{style:{textAlign:"center",padding:"40px 0",color:"var(--muted)"}},"Noch keine Muster erkennbar. Weiter tracken!"));
     ins.forEach(i=>sec.appendChild(el("div",{class:`insight ${i.type}`},el("div",{class:"insight-icon"},i.icon),el("div",{class:`insight-title ${i.type}`},i.title),el("div",{class:"insight-text"},i.text))));
+    // 🗂 Kontext & Situation – systematischer Einfluss auf Fokus, Stimmung & Unruhe
+    const ctxImpact=getContextImpact();
+    if(ctxImpact.length){
+      const card=el("div",{class:"card"});
+      card.appendChild(el("span",{class:"card-label"},"🗂 Kontext & Situation – Einfluss"));
+      card.appendChild(el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"12px",lineHeight:"1.6"}},"Ø an Tagen MIT dem Kontext vs. Tagen OHNE. 🟢 grün = günstiger · 🔴 rot = ungünstiger · grau = kaum Unterschied. Bei ⚡ Unruhe gilt: weniger ist besser."));
+      ctxImpact.forEach((ci,idx)=>{
+        const last=idx===ctxImpact.length-1;
+        const row=el("div",{style:{marginBottom:last?"0":"12px",paddingBottom:last?"0":"12px",borderBottom:last?"none":"1px solid var(--border)"}});
+        row.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}},
+          el("span",{style:{fontSize:"14px",fontWeight:"600"}},ci.label),
+          el("span",{style:{fontSize:"11px",color:"var(--muted)"}},`${ci.nDays} Tag${ci.nDays>1?"e":""}`)));
+        const chips=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"6px"}});
+        ci.metrics.forEach(m=>{
+          const col=ctxDeltaColor(m),neutral=col==="var(--muted)";
+          const arrow=Math.abs(m.delta)<0.15?"≈":(m.delta>0?"▲":"▼");
+          chips.appendChild(el("div",{style:{fontSize:"12px",padding:"3px 9px",borderRadius:"9px",background:neutral?"rgba(148,168,200,.12)":col+"22",color:col,fontWeight:"600"}},
+            `${m.icon} ${m.label} ${arrow}${m.delta>0?"+":""}${m.delta.toFixed(1)}`));
+        });
+        row.appendChild(chips);
+        card.appendChild(row);
+      });
+      sec.appendChild(card);
+    }
     sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"Ø Gesamtwerte"),el("div",{class:"row3"},...METRICS.map(m=>{const v=avgStat(m.id);return el("div",{class:"mini-stat"},el("div",{},m.icon),el("div",{class:"mini-stat-num",style:{color:v!=="–"?ratingColor(+v,m.inv):"var(--muted)"}},v),el("div",{class:"mini-stat-lbl"},m.label));})),el("div",{style:{fontSize:"11px",color:"var(--muted)",marginTop:"6px"}},"⚡💥 niedrig = besser")));
     const bl=getBaselineFocusAvg();
     if(bl){const fMedVals=[];Object.keys(S.data).forEach(d=>{const dd=S.data[d];if(!dd?.medication||dd?.isBaseline)return;const vs=Object.values(dd.checkins||{}).map(c=>c.symptoms?.focus).filter(Boolean);if(vs.length)fMedVals.push(vs.reduce((a,b)=>a+b,0)/vs.length);});const ma=avg(fMedVals);if(ma){const diff=(ma-bl).toFixed(2);sec.appendChild(el("div",{class:"insight "+(diff>0?"pos":"warn")},el("div",{class:"insight-icon"},"📊"),el("div",{class:`insight-title ${diff>0?"pos":"warn"}`},"Baseline-Vergleich"),el("div",{class:"insight-text"},`Baseline: ${bl.toFixed(1)}/5 (${getBaselineDays().length} Tage) · Mit Med: ${ma.toFixed(1)}/5 · Δ ${diff>0?"+":""}${diff}`)));}}
