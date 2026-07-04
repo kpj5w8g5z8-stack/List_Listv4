@@ -109,6 +109,7 @@ input[type=time],input[type=date]{padding:10px 8px;font-size:14px;max-width:100%
 .bp-sub.base{color:#56B4E9;}
 .bp-sub.peak{color:#E69F00;}
 .peak-hint{font-size:12px;color:var(--orange);line-height:1.5;background:rgba(253,186,116,.1);border:1px solid rgba(253,186,116,.3);border-radius:10px;padding:8px 10px;margin:8px 0;}
+.combo-peak{margin-bottom:10px;background:rgba(192,132,252,.07);border:1px solid rgba(192,132,252,.28);border-radius:14px;padding:11px 14px;}
 .trend-tip{position:fixed;z-index:400;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;font-size:12px;color:var(--text);box-shadow:0 8px 28px rgba(0,0,0,.55);pointer-events:none;max-width:210px;line-height:1.55;display:none;}
 .trend-tip .tt-date{font-weight:700;margin-bottom:4px;color:var(--accentL);}
 .trend-tip .tt-row{color:var(--muted);}
@@ -274,6 +275,28 @@ const HEALTH_FLAGS=[
 ];
 const IBU_DOSES=[200,400,600,800];
 const DEFAULT_MED_DURATIONS={Elvanse:13,Lisdexamfetamin:13,Methylphenidat:8,Metiphenal:8,Ritalin:4,Concerta:12,Medikinet:8,Strattera:24,Intuniv:24};
+// ── Punkt 2: Pharmakokinetische Wirkprofile (RELATIVES Timing-/Überlagerungsmodell, KEINE Plasmaspiegel, keine Dosisberatung) ──
+// Belegt durch PK-Literatur (Tmax / Wirkdauer):
+//  • MPH unretardiert (Ritalin): Tmax ~1,5–2 h, HWZ 2–3 h, Wirkung 3–4 h → schneller Peak, rascher Abfall.
+//  • MPH retard biphasisch (Medikinet adult / Ritalin LA, 50:50): zwei Peaks ~1,5 h & ~5 h, ~8 h.
+//  • Concerta OROS: früher Anstieg ~1 h, danach aufsteigend über 5–9 h, Tmax ~6–10 h, ~12 h (aufsteigendes Profil).
+//  • Lisdexamfetamin/Elvanse (Prodrug): flacher Anstieg, Peak d-Amphetamin ~3,5–4,5 h, HWZ ~12,7 h, Wirkung bis ~13 h.
+const MED_KIND_BY_NAME={
+  Elvanse:"prodrug",Lisdexamfetamin:"prodrug",
+  Concerta:"oros",
+  Medikinet:"biphasic",Methylphenidat:"biphasic",Metiphenal:"biphasic",
+  Ritalin:"ir",
+  Strattera:"nonstim",Intuniv:"nonstim",
+};
+// Kanonische Stützpunkte [Stunden nach Einnahme, relative Wirkung 0..1]; letzter Punkt = Wirkende bei Kanon-Dauer D0.
+const MED_KIND_PROFILE={
+  ir:      {D0:4.5, pts:[[0,0],[0.4,0.55],[1.5,1.0],[3.0,0.5],[4.5,0]]},
+  biphasic:{D0:8,   pts:[[0,0],[0.5,0.5],[1.5,0.95],[3.0,0.5],[5.0,0.9],[7.0,0.4],[8,0]]},
+  oros:    {D0:12,  pts:[[0,0],[0.9,0.5],[2.0,0.42],[5.0,0.8],[7.0,1.0],[10,0.55],[12,0]]},
+  prodrug: {D0:13,  pts:[[0,0],[1.0,0.32],[2.5,0.72],[4.0,1.0],[7,0.82],[10,0.5],[13,0]]},
+  nonstim: {D0:24,  pts:[[0,0.25],[3,0.55],[8,0.7],[14,0.72],[20,0.55],[24,0.4]]},
+};
+const MED_KIND_LABEL={ir:"unretardiert",biphasic:"retard (2 Peaks)",oros:"OROS/aufsteigend",prodrug:"Prodrug/Langzeit",nonstim:"Dauermedikation"};
 const PAIN_LOCATIONS_SVG=[
   {id:"nacken",label:"Nacken",cx:50,cy:16},
   {id:"schulter_l",label:"Schulter links",cx:33,cy:21},
@@ -471,19 +494,27 @@ function calcWakeDuration(aufgestandenAt,schlafenAt){
   return dur/60;
 }
 function getPrevDate(dateStr){const d=new Date(dateStr+'T12:00');d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);}
-function getSleepDurationForDate(date){
+const FALLBACK_SLEEP_H=8; // Punkt 1: Standard-Annahme bei fehlender/unvollständiger Schlafangabe
+// opts.fallback=true → 8 h annehmen, wenn Aufstehen ODER Schlafengehen fehlt bzw. die Dauer nicht bestimmbar ist.
+// Ohne fallback bleibt das Verhalten (null bei fehlenden Daten) erhalten – wichtig für ehrliche Korrelationen.
+function getSleepDurationForDate(date,opts){
+  const fb=!!(opts&&opts.fallback);
   // schlafenAt on a day's record = when they go to sleep THAT NIGHT (end of day).
   // Sleep that ended at aufgestandenAt started the PREVIOUS night → use prevDay.schlafenAt.
-  const d=S.data[date];if(!d?.aufgestandenAt)return null;
-  const prev=S.data[getPrevDate(date)];
-  if(prev?.schlafenAt)return calcSleepDuration(prev.schlafenAt,d.aufgestandenAt);
-  // Fallback for older entries where schlafenAt = last night's bedtime on same record:
-  // only if bedtime is clearly evening (≥18h) or hour > wakeup hour (unambiguously last night)
-  if(d?.schlafenAt){
-    const sh=+d.schlafenAt.split(':')[0],wh=+d.aufgestandenAt.split(':')[0];
-    if(sh>wh||sh>=18)return calcSleepDuration(d.schlafenAt,d.aufgestandenAt);
+  const d=S.data[date];
+  let dur=null;
+  if(d&&d.aufgestandenAt){
+    const prev=S.data[getPrevDate(date)];
+    if(prev?.schlafenAt)dur=calcSleepDuration(prev.schlafenAt,d.aufgestandenAt);
+    // Fallback for older entries where schlafenAt = last night's bedtime on same record:
+    // only if bedtime is clearly evening (≥18h) or hour > wakeup hour (unambiguously last night)
+    if(dur==null&&d.schlafenAt){
+      const sh=+d.schlafenAt.split(':')[0],wh=+d.aufgestandenAt.split(':')[0];
+      if(sh>wh||sh>=18)dur=calcSleepDuration(d.schlafenAt,d.aufgestandenAt);
+    }
   }
-  return null;
+  if(dur==null&&fb)return FALLBACK_SLEEP_H; // 8-Stunden-Fallback
+  return dur;
 }
 function loadSettings(){
   try{
@@ -538,6 +569,69 @@ function getEffectiveMedDuration(med,mfr){
   const lm=learnMedDuration(med,"");if(lm.n>=MIN_LEARN)return{h:lm.avg,src:"gelernt",n:lm.n};
   return{h:DEFAULT_MED_DURATIONS[med]||8,src:"standard",n:null};
 }
+// ── Punkt 2: Wirkkurven-Superposition ──
+function medKind(name){return MED_KIND_BY_NAME[name]||"biphasic";}
+// Relative Wirkung (0..1) einer Einzeldosis t Stunden nach Einnahme, zeitskaliert auf die effektive Wirkdauer durH.
+function medEffectAt(kind,tH,durH){
+  const prof=MED_KIND_PROFILE[kind]||MED_KIND_PROFILE.biphasic;
+  const scale=(durH&&durH>0?durH:prof.D0)/prof.D0;
+  if(tH<0)return 0;
+  const pts=prof.pts,tEnd=pts[pts.length-1][0]*scale;
+  if(tH>=tEnd)return 0;
+  for(let i=1;i<pts.length;i++){
+    const x0=pts[i-1][0]*scale,y0=pts[i-1][1],x1=pts[i][0]*scale,y1=pts[i][1];
+    if(tH<=x1){const f=x1>x0?(tH-x0)/(x1-x0):0;return y0+(y1-y0)*f;}
+  }
+  return 0;
+}
+function hToHHMM(h){const m=Math.round((((h%24)+24)%24)*60);const hh=Math.floor(m/60)%24,mm=m%60;return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;}
+// Überlagert (addiert) die Wirkkurven aller Einnahmen einer Dosisliste (Superpositionsprinzip) →
+// kombinierter Tages-Peak (Zeitpunkt höchster Gesamtwirkung) + Gesamtwirkfenster (Summe > Schwelle).
+function computeEffectForDoses(doseList){
+  const doses=(doseList||[]).filter(d=>d.takenAt&&hhmmToH(d.takenAt)!=null);
+  if(!doses.length)return null;
+  const items=doses.map(d=>{
+    const eff=getEffectiveMedDuration(d.medication,d.manufacturer);
+    return{t0:hhmmToH(d.takenAt),durH:eff.h,kind:medKind(d.medication),med:d.medication,dose:d.dosage,mfr:d.manufacturer,takenAt:d.takenAt};
+  }).sort((a,b)=>a.t0-b.t0);
+  const firstT=Math.min(...items.map(i=>i.t0));
+  const lastEnd=Math.max(...items.map(i=>i.t0+i.durH));
+  const STEP=0.1; // 6-Minuten-Raster
+  const curve=[];let peak={t:firstT,v:0};
+  for(let t=firstT;t<=lastEnd+1e-6;t+=STEP){
+    let s=0;for(const i of items)s+=medEffectAt(i.kind,t-i.t0,i.durH);
+    const pt={t:+t.toFixed(2),s:+s.toFixed(4)};curve.push(pt);
+    if(pt.s>peak.v)peak={t:pt.t,v:pt.s};
+  }
+  const THR=0.03;let winStart=null,winEnd=null;
+  for(const p of curve){if(p.s>THR){if(winStart==null)winStart=p.t;winEnd=p.t;}}
+  if(winStart==null){winStart=firstT;winEnd=firstT;}
+  const maxS=Math.max(...curve.map(p=>p.s),1e-4);
+  const allNonstim=items.every(i=>i.kind==="nonstim");
+  return{curve,items,firstT,lastEnd,peakT:peak.t,peakV:peak.v,winStart,winEnd,maxS,doseCount:doses.length,allNonstim};
+}
+function computeDayEffect(dayOrDate){
+  const day=typeof dayOrDate==="string"?S.data[dayOrDate]:dayOrDate;
+  return computeEffectForDoses(getDayMeds(day));
+}
+// ── Punkt 3: Schlafqualität liegt jetzt auf Tagesebene (day.schlafschlecht / day.sleepTags).
+// Helfer lesen den neuen Ort und fallen für Altdaten auf die früheren stündlichen Check-in-Werte zurück.
+function getDaySleepTags(date){
+  const d=S.data[date];if(!d)return{};
+  if(d.sleepTags&&Object.keys(d.sleepTags).length)return d.sleepTags;
+  const agg={};Object.values(d.checkins||{}).forEach(c=>Object.entries(c.sleepTags||{}).forEach(([k,v])=>{if(v)agg[k]=true;}));
+  return agg;
+}
+function getDaySleepBad(date){
+  const d=S.data[date];if(!d)return false;
+  if(typeof d.schlafschlecht==="boolean")return d.schlafschlecht;
+  return Object.values(d.checkins||{}).some(c=>c.schlafschlecht);
+}
+function hasDaySleepQuality(date){
+  const d=S.data[date];if(!d)return false;
+  return typeof d.schlafschlecht==="boolean"||Object.keys(getDaySleepTags(date)).length>0||Object.values(d.checkins||{}).some(c=>typeof c.schlafschlecht==="boolean");
+}
+function toggleMedSleepTag(id){const cur=S.medForm.sleepTags||{};S.medForm.sleepTags={...cur,[id]:!cur[id]};render();}
 
 // ── STATE ──
 let S={
@@ -547,7 +641,7 @@ let S={
   medForm:{medication:"Elvanse",dosage:"",takenAt:"",manufacturer:"",medications:[],isPause:false,isBaseline:false,
     aufgestandenAt:"",schlafenAt:"",gewicht:"",gewichtTime:"",sys:"",dia:"",puls:"",bpTime:"",
     sysPeak:"",diaPeak:"",pulsPeak:"",bpTimePeak:"",isSick:false,
-    ctxTags:{},stressTags:{}},
+    schlafschlecht:false,sleepTags:{},ctxTags:{},stressTags:{}},
   showSettings:false,
   statsTab:"graph",graphMetrics:["focus","mood","energy"],
   showImport:false,
@@ -560,12 +654,13 @@ function set(u){Object.assign(S,u);render();}
 
 // ── DATA ACTIONS ──
 function openCheckin(hour){
-  const ex=S.data[S.selDate]?.checkins?.[hour]||{symptoms:{},events:[],note:"",healthFlags:{},sleepTags:{},painLocations:[],ibuprofenMg:0};
+  // Punkt 3: Schlafqualität wird NICHT mehr stündlich erfasst (nur noch 1×/Tag im Tagesformular).
+  const ex=S.data[S.selDate]?.checkins?.[hour]||{symptoms:{},events:[],note:"",healthFlags:{},painLocations:[],ibuprofenMg:0};
   set({checkinHour:hour,draft:{
     symptoms:{...ex.symptoms},events:[...(ex.events||[])],note:ex.note||"",
-    healthFlags:{...(ex.healthFlags||{})},sleepTags:{...(ex.sleepTags||{})},
+    healthFlags:{...(ex.healthFlags||{})},
     painLocations:[...(ex.painLocations||[])],
-    schlafschlecht:ex.schlafschlecht||false,ibuprofenMg:ex.ibuprofenMg||0,
+    ibuprofenMg:ex.ibuprofenMg||0,
   }});
 }
 function saveCheckin(){
@@ -597,6 +692,7 @@ function saveMed(){
   day.isBaseline=f.isBaseline||false;
   day.isSick=f.isSick||false;
   day.aufgestandenAt=f.aufgestandenAt||"";day.schlafenAt=f.schlafenAt||"";
+  day.schlafschlecht=f.schlafschlecht||false;day.sleepTags=f.sleepTags||{}; // Punkt 3: Schlafqualität 1×/Tag
   day.gewicht=f.gewicht||"";day.gewichtTime=f.gewichtTime||"";
   day.sys=f.sys||"";day.dia=f.dia||"";day.puls=f.puls||"";day.bpTime=f.bpTime||"";
   day.sysPeak=f.sysPeak||"";day.diaPeak=f.diaPeak||"";day.pulsPeak=f.pulsPeak||"";day.bpTimePeak=f.bpTimePeak||"";
@@ -618,7 +714,6 @@ function addEvent(type,label){
 function removeEvent(i){S.draft={...S.draft,events:S.draft.events.filter((_,j)=>j!==i)};render();}
 function setSym(id,v){S.draft={...S.draft,symptoms:{...S.draft.symptoms,[id]:v}};render();}
 function toggleHealthFlag(id){const cur=S.draft.healthFlags||{};S.draft={...S.draft,healthFlags:{...cur,[id]:!cur[id]}};render();}
-function toggleSleepTag(id){const cur=S.draft.sleepTags||{};S.draft={...S.draft,sleepTags:{...cur,[id]:!cur[id]}};render();}
 function togglePainLocation(loc){
   const cur=S.draft.painLocations||[];
   S.draft={...S.draft,painLocations:cur.includes(loc)?cur.filter(l=>l!==loc):[...cur,loc]};render();
@@ -816,7 +911,8 @@ function buildMedCompareData(mode="day"){
 function buildSleepTrendData(days=14){
   const allDays=Object.keys(S.data).sort().reverse().slice(0,days).reverse();
   return allDays.map(date=>{
-    const dur=getSleepDurationForDate(date);
+    // Punkt 1: In der Statistik 8 h annehmen, wenn keine/unvollständige Angabe vorliegt.
+    const dur=getSleepDurationForDate(date,{fallback:true});
     return{date,avg:dur};
   });
 }
@@ -858,7 +954,7 @@ function generateInsights(){
   const sleepTagImpact={};SLEEP_TAGS.forEach(t=>{sleepTagImpact[t.id]=[];});
   sortedDays.forEach((date,i)=>{
     const next=sortedDays[i+1];if(!next)return;
-    const tags=Object.values(S.data[date]?.checkins||{}).flatMap(c=>Object.entries(c.sleepTags||{}).filter(([,v])=>v).map(([k])=>k));
+    const st=getDaySleepTags(date);const tags=Object.keys(st).filter(k=>st[k]); // Punkt 3: Schlaf-Tags jetzt tagesbasiert
     if(!tags.length)return;
     const nf=avg(Object.values(S.data[next]?.checkins||{}).map(c=>c.symptoms?.focus).filter(Boolean));
     if(nf)tags.forEach(t=>{if(sleepTagImpact[t])sleepTagImpact[t].push(nf);});
@@ -977,8 +1073,8 @@ function generateInsights(){
   {const painDays2=allDaysSorted.filter(d=>Object.values(S.data[d]?.checkins||{}).some(c=>c.healthFlags?.gelenke));
   const noPainDays2=allDaysSorted.filter(d=>!painDays2.includes(d));
   if(painDays2.length>=3&&noPainDays2.length>=3){
-    const pSleep=painDays2.map(d=>getSleepDurationForDate(d)).filter(Boolean);
-    const npSleep=noPainDays2.map(d=>getSleepDurationForDate(d)).filter(Boolean);
+    const pSleep=painDays2.map(d=>getSleepDurationForDate(d,{fallback:true})).filter(Boolean);
+    const npSleep=noPainDays2.map(d=>getSleepDurationForDate(d,{fallback:true})).filter(Boolean);
     if(pSleep.length>=3&&npSleep.length>=3){const diff=avg(npSleep)-avg(pSleep);if(diff>0.5)ins.push({type:"warn",icon:"🦵",title:`Gelenkschmerzen verkürzen Schlaf`,
       text:`An Schmerztagen Ø ${avg(pSleep).toFixed(1)}h Schlaf vs. ${avg(npSleep).toFixed(1)}h ohne Schmerzen.`});}}}
   // ── Ibuprofen-Häufigkeit ──
@@ -1056,6 +1152,31 @@ function ctxDeltaIsGood(m){return m.inv?m.delta<0:m.delta>0;}
 function ctxDeltaColor(m){return Math.abs(m.delta)<0.15?"var(--muted)":(ctxDeltaIsGood(m)?"var(--green)":"var(--red)");}
 
 // ── SVG GRAPHS ──
+// Punkt 2: kompakte Sparkline der überlagerten Tages-Wirkung (Superposition) mit Peak-Markierung.
+function buildComboSparkline(de){
+  const W=330,H=66,PAD={t:6,r:8,b:16,l:8};
+  const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
+  const t0=de.firstT,t1=Math.max(de.winEnd,de.peakT,t0+1),span=(t1-t0)||1;
+  const X=t=>PAD.l+((t-t0)/span)*gW;
+  const Y=s=>PAD.t+gH-Math.max(0,Math.min(1,s/de.maxS))*gH;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  const seg=de.curve.filter(p=>p.t>=t0-1e-6&&p.t<=t1+1e-6);
+  if(seg.length>1){
+    let area=`M${X(seg[0].t).toFixed(1)},${(PAD.t+gH).toFixed(1)}`;
+    seg.forEach(p=>{area+=` L${X(p.t).toFixed(1)},${Y(p.s).toFixed(1)}`;});
+    area+=` L${X(seg[seg.length-1].t).toFixed(1)},${(PAD.t+gH).toFixed(1)} Z`;
+    svg+=`<path d="${area}" fill="#c084fc" opacity="0.15"/>`;
+    let ln=`M${X(seg[0].t).toFixed(1)},${Y(seg[0].s).toFixed(1)}`;
+    for(let k=1;k<seg.length;k++)ln+=` L${X(seg[k].t).toFixed(1)},${Y(seg[k].s).toFixed(1)}`;
+    svg+=`<path d="${ln}" fill="none" stroke="#c084fc" stroke-width="2" stroke-linejoin="round"/>`;
+  }
+  de.items.forEach(i=>{const x=X(i.t0);svg+=`<line x1="${x.toFixed(1)}" y1="${(PAD.t+gH).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(PAD.t+gH+4).toFixed(1)}" stroke="#c084fc" stroke-width="1.5"/><text x="${x.toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="7" fill="#9a7fd0">💊${i.takenAt}</text>`;});
+  const px=X(de.peakT);
+  svg+=`<line x1="${px.toFixed(1)}" y1="${PAD.t}" x2="${px.toFixed(1)}" y2="${(PAD.t+gH).toFixed(1)}" stroke="#e9d5ff" stroke-width="1" stroke-dasharray="2,2"/>`;
+  svg+=`<circle cx="${px.toFixed(1)}" cy="${Y(de.peakV).toFixed(1)}" r="2.6" fill="#e9d5ff"/>`;
+  svg+=`<text x="${px.toFixed(1)}" y="${Math.max(PAD.t+7,Y(de.peakV)-4).toFixed(1)}" text-anchor="middle" font-size="7.5" fill="#e9d5ff" font-weight="700">▲${hToHHMM(de.peakT)}</text>`;
+  return svg+"</svg>";
+}
 function buildDayGraph(date,selectedMetrics){
   const W=360,ICON_H=34,H=202,PAD={t:ICON_H+14,r:10,b:28,l:28};
   const gW=W-PAD.l-PAD.r,gH=H-PAD.t-PAD.b;
@@ -1078,6 +1199,27 @@ function buildDayGraph(date,selectedMetrics){
     const x=xOf(hv);
     svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#c084fc" stroke-width="2" stroke-dasharray="4,3"/><text x="${x+3}" y="${PAD.t+22}" font-size="9" fill="#c084fc">💊</text>`;
   });
+  // Punkt 2: kombinierte Wirkkurve (Superposition ALLER Einnahmen) hinter den Metriken + Tages-Peak
+  const de=computeDayEffect(day);
+  if(de&&!de.allNonstim){
+    const yEff=s=>PAD.t+gH-Math.max(0,Math.min(1,s/de.maxS))*gH*0.9;
+    const csx=t=>xOf(Math.max(1,Math.min(24,t)));
+    const seg=de.curve.filter(p=>p.t>=1&&p.t<=24.001);
+    if(seg.length>1){
+      let area=`M${csx(seg[0].t).toFixed(1)},${(PAD.t+gH).toFixed(1)}`;
+      seg.forEach(p=>{area+=` L${csx(p.t).toFixed(1)},${yEff(p.s).toFixed(1)}`;});
+      area+=` L${csx(seg[seg.length-1].t).toFixed(1)},${(PAD.t+gH).toFixed(1)} Z`;
+      svg+=`<path d="${area}" fill="#c084fc" opacity="0.10"/>`;
+      let ln=`M${csx(seg[0].t).toFixed(1)},${yEff(seg[0].s).toFixed(1)}`;
+      for(let k=1;k<seg.length;k++)ln+=` L${csx(seg[k].t).toFixed(1)},${yEff(seg[k].s).toFixed(1)}`;
+      svg+=`<path d="${ln}" fill="none" stroke="#c084fc" stroke-width="1.6" opacity="0.7" stroke-linejoin="round"/>`;
+    }
+    if(de.peakT>=1&&de.peakT<=24.4&&de.peakV>0.05){
+      const px=csx(de.peakT),ly=Math.max(PAD.t+8,yEff(de.peakV)-5);
+      svg+=`<line x1="${px.toFixed(1)}" y1="${PAD.t}" x2="${px.toFixed(1)}" y2="${(PAD.t+gH).toFixed(1)}" stroke="#c084fc" stroke-width="1" stroke-dasharray="2,3" opacity="0.85"/>`;
+      svg+=`<text x="${px.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="8" fill="#e9d5ff" font-weight="700">▲${hToHHMM(de.peakT)}</text>`;
+    }
+  }
   selectedMetrics.forEach(mid=>{
     const m=METRICS.find(x=>x.id===mid);if(!m)return;
     const dp=pts.filter(p=>p[mid]!=null).map(p=>({x:xOf(p.hour),y:yOf(p[mid])}));
@@ -1459,7 +1601,7 @@ function buildReportData(){
     const pairs=[];
     sortedDays.forEach((date,i)=>{
       const next=sortedDays[i+1];if(!next)return;
-      const hasTag=Object.values(S.data[date]?.checkins||{}).some(c=>c.sleepTags?.[tag.id]);
+      const hasTag=!!getDaySleepTags(date)[tag.id]; // Punkt 3: tagesbasierte Schlafqualität
       const nf=avg(Object.values(S.data[next]?.checkins||{}).map(c=>c.symptoms?.focus).filter(Boolean));
       if(nf!=null)pairs.push({x:hasTag?1:0,y:nf});
     });
@@ -1693,19 +1835,7 @@ function renderCheckin(){
       );
     })
   ));
-  sec.appendChild(el("div",{class:"card"},
-    el("span",{class:"card-label"},"😴 Schlafqualität"),
-    el("div",{style:{display:"flex",gap:"8px",marginBottom:"8px"}},
-      ...["Gut","Schlecht"].map(label=>{
-        const isS=label==="Schlecht";
-        return el("button",{class:"ctx-tag"+(isS&&draft.schlafschlecht?" stress-on":!isS&&!draft.schlafschlecht?" on":""),onClick:()=>{S.draft={...S.draft,schlafschlecht:isS};render();}},label);
-      })
-    ),
-    draft.schlafschlecht?el("div",{class:"sleep-subtags"},
-      el("div",{style:{fontSize:"11px",color:"var(--accentL)",marginBottom:"8px"}},"Was hat den Schlaf gestört?"),
-      el("div",{class:"ctx-strip",style:{marginBottom:"0"}},...SLEEP_TAGS.map(t=>el("button",{class:"ctx-tag"+(draft.sleepTags?.[t.id]?" on":""),onClick:()=>toggleSleepTag(t.id)},t.label)))
-    ):null
-  ));
+  // Punkt 3: Die Schlafqualität wurde hier entfernt und ins Tagesformular (Medikamenteneingabe) verschoben.
   function makeEventSection(type,title,presets){
     const items=draft.events.filter(e=>e.type===type);
     return el("div",{style:{marginBottom:"6px"}},
@@ -1852,6 +1982,16 @@ function renderMedModal(){
         const w=calcWakeDuration(f.aufgestandenAt||day.aufgestandenAt,f.schlafenAt||day.schlafenAt);
         return(d||w)?el("div",{style:{fontSize:"12px",color:"var(--accentL)",marginTop:"4px"}},(d?`🌙 ${d.toFixed(1)}h Schlaf  `:"")+(w?`☀️ ${w.toFixed(1)}h wach`:"")):null;
       })(),
+      // Punkt 3: Schlafqualität – nur noch hier, einmal pro Tag (statt stündlich)
+      el("span",{class:"card-label",style:{marginTop:"12px"}},"😴 Schlafqualität"),
+      el("div",{style:{display:"flex",gap:"8px"}},...["Gut","Schlecht"].map(label=>{
+        const isBad=label==="Schlecht";
+        return el("button",{class:"ctx-tag"+(isBad&&f.schlafschlecht?" stress-on":!isBad&&!f.schlafschlecht?" on":""),onClick:()=>{S.medForm.schlafschlecht=isBad;render();}},label);
+      })),
+      f.schlafschlecht?el("div",{class:"sleep-subtags"},
+        el("div",{style:{fontSize:"11px",color:"var(--accentL)",marginBottom:"8px"}},"Was hat den Schlaf gestört?"),
+        el("div",{class:"ctx-strip",style:{marginBottom:"0"}},...SLEEP_TAGS.map(t=>el("button",{class:"ctx-tag"+(f.sleepTags?.[t.id]?" on":""),onClick:()=>toggleMedSleepTag(t.id)},t.label)))
+      ):null,
       el("span",{class:"card-label",style:{marginTop:"12px"}},"⚖️ Gewicht"),
       el("div",{class:"row2"},vInp("Gewicht","number","gewicht","kg"),vInp("Uhrzeit","time","gewichtTime")),
       el("span",{class:"card-label",style:{marginTop:"12px"}},"❤️ Blutdruck"),
@@ -1861,17 +2001,17 @@ function renderMedModal(){
         vInp("Puls","number","puls","bpm"),vInp("Uhrzeit","time","bpTime")
       ),
       (()=>{
-        // Wirkungshöhepunkt auf Basis der ERSTEN Einnahme des Tages (kumulierte Mehrfacheinnahme → Basis = erste Dosis)
-        const intakes=sortMeds([...(f.medications||[])]);
-        const base=intakes[0]||{medication:f.medication,manufacturer:f.manufacturer,takenAt:f.takenAt};
-        const takenAt=base.takenAt||f.takenAt||day.takenAt;
-        if(isPause||!takenAt)return null;
-        const eff=getEffectiveMedDuration(base.medication||f.medication||day.medication,base.manufacturer||f.manufacturer||day.manufacturer);
-        const peakOffH=Math.min(4,Math.max(2,eff.h*0.3)); // Wirkungshöhepunkt ~2–4h nach Einnahme
-        const[ph0,pm0]=takenAt.split(":").map(Number);
-        let pk=(ph0*60+(pm0||0)+Math.round(peakOffH*60))%1440;
-        const pkStr=`${String(Math.floor(pk/60)).padStart(2,"0")}:${String(pk%60).padStart(2,"0")}`;
-        return el("div",{class:"peak-hint"},`💡 Dein Wirkungshöhepunkt ist voraussichtlich um ${pkStr} Uhr (~${peakOffH.toFixed(1)} h nach der ersten Einnahme um ${takenAt}). Bitte miss dann deinen Blutdruck.`);
+        // Punkt 2: Kombinierter Wirkungshöhepunkt per Superposition ALLER (auch geplanter) Einnahmen des Tages.
+        if(isPause)return null;
+        const list=sortMeds([...(f.medications||[])]);
+        const pend=medComposerPending(f);
+        const all=pend?sortMeds([...list,pend]):list;
+        const de=computeEffectForDoses(all);
+        if(!de)return null;
+        if(de.allNonstim)return el("div",{class:"peak-hint"},"💡 Dauermedikation ohne ausgeprägten Tages-Peak – Blutdruck kannst du zu einem festen Zeitpunkt messen.");
+        const pkStr=hToHHMM(de.peakT);
+        const head=de.doseCount>1?`Kombinierter Wirkungshöhepunkt (${de.doseCount} Einnahmen, überlagert)`:"Wirkungshöhepunkt";
+        return el("div",{class:"peak-hint"},`💡 ${head} voraussichtlich gegen ${pkStr} Uhr. Miss dann idealerweise deinen Blutdruck „zum Wirkungshöhepunkt".`);
       })(),
       el("div",{class:"bp-sub peak"},"🟠 Zum Wirkungshöhepunkt"),
       el("div",{class:"vital-row",style:{gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))"}},
@@ -1960,6 +2100,7 @@ function renderToday(){
     const f={medication:day.medication||s.defaultMed||getMeds()[0]||"Elvanse",dosage:"",takenAt:"",manufacturer:day.manufacturer||s.defaultManufacturer||"",
       medications:dayDoses.map(m=>({...m})),
       isBaseline:day.isBaseline||false,isPause:day.isPauseDay||false,isSick:day.isSick||false,
+      schlafschlecht:getDaySleepBad(date),sleepTags:{...getDaySleepTags(date)},
       aufgestandenAt:day.aufgestandenAt||"",schlafenAt:day.schlafenAt||"",
       gewicht:day.gewicht||"",gewichtTime:day.gewichtTime||"",sys:day.sys||"",dia:day.dia||"",puls:day.puls||"",bpTime:day.bpTime||"",
       sysPeak:day.sysPeak||"",diaPeak:day.diaPeak||"",pulsPeak:day.pulsPeak||"",bpTimePeak:day.bpTimePeak||"",
@@ -2026,14 +2167,41 @@ function renderToday(){
       return card;
     })());
   }
-  if(day.aufgestandenAt||day.schlafenAt){
-    const dur=getSleepDurationForDate(date);const wake=calcWakeDuration(day.aufgestandenAt,day.schlafenAt);
-    sec.appendChild(el("div",{class:"card",style:{background:"rgba(96,165,250,.05)",padding:"10px 14px"}},
-      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
-        el("span",{style:{fontSize:"13px",color:"var(--accentL)"}},(day.aufgestandenAt?`☀️ ${day.aufgestandenAt}`:"")+(day.schlafenAt?` → 🌙 ${day.schlafenAt}`:"")),
+  // Punkt 2: Kombinierter Tages-Peak + Gesamtwirkfenster (Superposition) für den gewählten Tag – auch historisch.
+  (()=>{
+    const de=computeDayEffect(day);
+    if(!de)return;
+    const card=el("div",{class:"combo-peak"});
+    if(de.allNonstim){
+      card.appendChild(el("div",{style:{fontSize:"12px",color:"var(--muted)"}},"💠 Dauermedikation – gleichmäßige Wirkung über den Tag, kein ausgeprägter Peak."));
+      sec.appendChild(card);return;
+    }
+    const past=de.winEnd>24||de.peakT>24,totalH=de.winEnd-de.winStart;
+    card.appendChild(el("div",{style:{fontSize:"12px",fontWeight:"700",color:"var(--purple)",marginBottom:"3px"}},
+      de.doseCount>1?`🔺 Kombinierter Tages-Peak · ${de.doseCount} Einnahmen überlagert`:"🔺 Wirkungshöhepunkt"));
+    card.appendChild(el("div",{style:{fontSize:"12px",color:"var(--muted)",lineHeight:"1.5"}},
+      `Höchste Gesamtwirkung gegen ${hToHHMM(de.peakT)} Uhr · Gesamtwirkfenster ${hToHHMM(de.winStart)}–${hToHHMM(de.winEnd)}${past?" (bis Folgetag)":""} · ~${totalH.toFixed(1)} h.`));
+    card.appendChild(svgEl(buildComboSparkline(de)));
+    card.appendChild(el("div",{style:{fontSize:"10px",color:"var(--muted)",opacity:".72",marginTop:"2px"}},
+      "Relatives PK-Timing-Modell (Überlagerung der Wirkprofile) – keine Plasmaspiegel, keine Dosisempfehlung."));
+    sec.appendChild(card);
+  })();
+  {
+    const slBad=getDaySleepBad(date);const slTags=getDaySleepTags(date);const slKeys=Object.keys(slTags).filter(k=>slTags[k]);const hasQual=hasDaySleepQuality(date);
+    if(day.aufgestandenAt||day.schlafenAt||hasQual||slKeys.length){
+      // Punkt 1: 8h-Fallback für die Anzeige · Punkt 3: Schlafqualität hier sichtbar (statt in den Stundeneinträgen)
+      const dur=getSleepDurationForDate(date,{fallback:true});const wake=calcWakeDuration(day.aufgestandenAt,day.schlafenAt);
+      const card2=el("div",{class:"card",style:{background:"rgba(96,165,250,.05)",padding:"10px 14px"}});
+      card2.appendChild(el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"4px"}},
+        el("span",{style:{fontSize:"13px",color:"var(--accentL)"}},((day.aufgestandenAt?`☀️ ${day.aufgestandenAt}`:"")+(day.schlafenAt?` → 🌙 ${day.schlafenAt}`:""))||"😴 Schlaf"),
         el("span",{style:{fontSize:"13px",color:"var(--muted)"}},[dur?`${dur.toFixed(1)}h Schlaf`:"",wake?`${wake.toFixed(1)}h wach`:""].filter(Boolean).join(" · "))
-      )
-    ));
+      ));
+      if(hasQual||slKeys.length)card2.appendChild(el("div",{style:{display:"flex",flexWrap:"wrap",gap:"5px",alignItems:"center",marginTop:"6px"}},
+        el("span",{style:{fontSize:"12px",fontWeight:"600",color:slBad?"var(--red)":"var(--green)"}},slBad?"😴 Schlecht geschlafen":"😴 Gut geschlafen"),
+        ...slKeys.map(id=>{const t=SLEEP_TAGS.find(t=>t.id===id);return t?el("span",{class:"event-chip caff",style:{fontSize:"11px",padding:"2px 8px"}},t.label):null;}).filter(Boolean)
+      ));
+      sec.appendChild(card2);
+    }
   }
   const doseHours=new Set(getDayMeds(day).map(m=>m.takenAt?parseInt(m.takenAt):null).filter(x=>x!=null));
   const tl=el("div",{class:"timeline-scroll"},el("div",{class:"timeline-row"},...HOURS.map(h=>{
@@ -2056,11 +2224,10 @@ function renderToday(){
         const evChips=(c.events||[]).map(e=>el("span",{class:`event-chip ${e.type}`,style:{fontSize:"11px",padding:"2px 8px"}},(e.type==="caff"?"☕":e.type==="food"?"🍽️":e.type==="pos"?"✅":"⚠️")+" "+e.label));
         const hfChips=Object.entries(c.healthFlags||{}).filter(([,v])=>v).map(([id])=>{const f=HEALTH_FLAGS.find(f=>f.id===id);return f?el("span",{class:"event-chip health",style:{fontSize:"11px",padding:"2px 8px"}},f.icon+" "+f.label):null;}).filter(Boolean);
         const ibuChip=c.ibuprofenMg?el("span",{class:"event-chip neg",style:{fontSize:"11px",padding:"2px 8px"}},`💊 Ibu ${c.ibuprofenMg}mg`):null;
-        const sleepChips=Object.entries(c.sleepTags||{}).filter(([,v])=>v).map(([id])=>{const t=SLEEP_TAGS.find(t=>t.id===id);return t?el("span",{class:"event-chip caff",style:{fontSize:"11px",padding:"2px 8px"}},t.label):null;}).filter(Boolean);
         return el("div",{class:"entry-row",onClick:()=>openCheckin(+h)},
           el("div",{class:"entry-time"},h+":00"),
           el("div",{style:{flex:"1"}},
-            el("div",{class:"entry-tags"},...tags,...evChips,...hfChips,...[ibuChip].filter(Boolean),...sleepChips),
+            el("div",{class:"entry-tags"},...tags,...evChips,...hfChips,...[ibuChip].filter(Boolean)),
             c.note?el("div",{class:"entry-note"},c.note):null,
             (c.painLocations||[]).length?el("div",{class:"entry-note",style:{color:"var(--red)"}},"📍 "+(c.painLocations||[]).map(id=>PAIN_LOCATIONS_SVG.find(l=>l.id===id)?.label||id).join(", ")):null
           )
@@ -2122,9 +2289,9 @@ function renderStats(){
       const last7=getLast7();
       sec.appendChild(el("div",{class:"card"},
         el("span",{class:"card-label"},`Tagesgraph – ${S.selDate===todayStr()?"Heute":fmtDateS(S.selDate)}`),
-        el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px"}},"🔵 Blauer Hintergrund = Schlafphase"),
+        el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px",lineHeight:"1.6"}},"🔵 Blauer Hintergrund = Schlafphase · 🟣 Fläche = überlagerte Med-Wirkung (Superposition), ▲ = kombinierter Tages-Peak · Uhrzeit: morgens links → abends rechts"),
         (()=>{const g=el("div",{class:"graph-wrap"});g.appendChild(svgEl(buildDayGraph(S.selDate,S.graphMetrics)));return g;})(),
-        el("div",{class:"graph-legend"},...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme"))),
+        el("div",{class:"graph-legend"},...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme")),el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"var(--purple)",opacity:".7"}}),el("span",{},"Wirkung (Σ) · ▲ Peak"))),
         el("div",{style:{display:"flex",gap:"6px",marginTop:"10px",overflowX:"auto"}},...last7.map(d=>{const dt=new Date(d+"T12:00");return el("button",{class:"btn sm"+(S.selDate===d?" active":" ghost-sm"),onClick:()=>set({selDate:d})},`${dt.getDate()}.${dt.getMonth()+1}`);}))
       ));
     } else if(S.graphRange==="week"||S.graphRange==="month"){
