@@ -48,6 +48,8 @@ input[type=time],input[type=date]{padding:10px 8px;font-size:14px;max-width:100%
 .scale-row{display:flex;gap:6px;}
 .scale-btn{flex:1;padding:12px 0;border-radius:10px;cursor:pointer;font-size:17px;font-weight:700;
   border:1.5px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);font-family:inherit;}
+.date-strip-month{font-size:13px;font-weight:700;color:var(--accentL);letter-spacing:.02em;margin:0 0 7px 2px;display:flex;align-items:center;gap:6px;}
+.date-strip-month::before{content:"📅";font-size:12px;}
 .date-strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;}
 .date-strip::-webkit-scrollbar{display:none;}
 .date-pill{display:flex;flex-direction:column;align-items:center;padding:8px 12px;border-radius:12px;
@@ -274,16 +276,22 @@ const HEALTH_FLAGS=[
   {id:"sport",icon:"🏃",label:"Sport gemacht"},
 ];
 const IBU_DOSES=[200,400,600,800];
-const DEFAULT_MED_DURATIONS={Elvanse:13,Lisdexamfetamin:13,Methylphenidat:8,Metiphenal:8,Ritalin:4,Concerta:12,Medikinet:8,Strattera:24,Intuniv:24};
+const MPH_NEURAXPHARM="Methylphenidat-neuraxpharm retard";
+const DEFAULT_MED_DURATIONS={Elvanse:13,Lisdexamfetamin:13,Methylphenidat:8,Metiphenal:8,Ritalin:4,Concerta:12,Medikinet:8,Strattera:24,Intuniv:24,[MPH_NEURAXPHARM]:12};
 // ── Punkt 2: Pharmakokinetische Wirkprofile (RELATIVES Timing-/Überlagerungsmodell, KEINE Plasmaspiegel, keine Dosisberatung) ──
 // Belegt durch PK-Literatur (Tmax / Wirkdauer):
 //  • MPH unretardiert (Ritalin): Tmax ~1,5–2 h, HWZ 2–3 h, Wirkung 3–4 h → schneller Peak, rascher Abfall.
 //  • MPH retard biphasisch (Medikinet adult / Ritalin LA, 50:50): zwei Peaks ~1,5 h & ~5 h, ~8 h.
 //  • Concerta OROS: früher Anstieg ~1 h, danach aufsteigend über 5–9 h, Tmax ~6–10 h, ~12 h (aufsteigendes Profil).
 //  • Lisdexamfetamin/Elvanse (Prodrug): flacher Anstieg, Peak d-Amphetamin ~3,5–4,5 h, HWZ ~12,7 h, Wirkung bis ~13 h.
+//  • Methylphenidat-neuraxpharm retard (Concerta-Freisetzung, bioäquivalent zu Concerta 54 mg, FI neuraxpharm 09/2025):
+//    biphasisches Freisetzungsprofil – schnell freisetzende Außenschicht Cmax nach ~1,35–1,4 h (Anteil ~22 %),
+//    danach verzögert freisetzende Komponente aufsteigend, sekundärer/Haupt-Peak nach ~5,3 h, klinische Wirkung bis ~12 h.
+//    → eigenes Profil "biphasic_oros": kleiner Initial-Peak, kurze Delle, dann plateauartiger Wiederanstieg zum Hauptmaximum.
 const MED_KIND_BY_NAME={
   Elvanse:"prodrug",Lisdexamfetamin:"prodrug",
   Concerta:"oros",
+  [MPH_NEURAXPHARM]:"biphasic_oros",
   Medikinet:"biphasic",Methylphenidat:"biphasic",Metiphenal:"biphasic",
   Ritalin:"ir",
   Strattera:"nonstim",Intuniv:"nonstim",
@@ -293,10 +301,12 @@ const MED_KIND_PROFILE={
   ir:      {D0:4.5, pts:[[0,0],[0.4,0.55],[1.5,1.0],[3.0,0.5],[4.5,0]]},
   biphasic:{D0:8,   pts:[[0,0],[0.5,0.5],[1.5,0.95],[3.0,0.5],[5.0,0.9],[7.0,0.4],[8,0]]},
   oros:    {D0:12,  pts:[[0,0],[0.9,0.5],[2.0,0.42],[5.0,0.8],[7.0,1.0],[10,0.55],[12,0]]},
+  // Methylphenidat-neuraxpharm retard: ausgeprägt biphasisch + aufsteigendes OROS-Plateau (validiert gegen FI-Tmax 1,4 h / 5,3 h, Wirkung ~12 h)
+  biphasic_oros:{D0:12, pts:[[0,0],[1.4,0.22],[2.4,0.20],[4.0,0.42],[5.3,0.68],[7.0,1.00],[8.5,0.92],[10.0,0.60],[12.0,0]]},
   prodrug: {D0:13,  pts:[[0,0],[1.0,0.32],[2.5,0.72],[4.0,1.0],[7,0.82],[10,0.5],[13,0]]},
   nonstim: {D0:24,  pts:[[0,0.25],[3,0.55],[8,0.7],[14,0.72],[20,0.55],[24,0.4]]},
 };
-const MED_KIND_LABEL={ir:"unretardiert",biphasic:"retard (2 Peaks)",oros:"OROS/aufsteigend",prodrug:"Prodrug/Langzeit",nonstim:"Dauermedikation"};
+const MED_KIND_LABEL={ir:"unretardiert",biphasic:"retard (2 Peaks)",biphasic_oros:"retard biphasisch (Concerta-Prinzip)",oros:"OROS/aufsteigend",prodrug:"Prodrug/Langzeit",nonstim:"Dauermedikation"};
 const PAIN_LOCATIONS_SVG=[
   {id:"nacken",label:"Nacken",cx:50,cy:16},
   {id:"schulter_l",label:"Schulter links",cx:33,cy:21},
@@ -516,11 +526,19 @@ function getSleepDurationForDate(date,opts){
   if(dur==null&&fb)return FALLBACK_SLEEP_H; // 8-Stunden-Fallback
   return dur;
 }
+const DEFAULT_MEDS=["Elvanse","Methylphenidat",MPH_NEURAXPHARM,"Ritalin","Concerta","Medikinet","Strattera","Intuniv"];
 function loadSettings(){
   try{
     const s=JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}");
-    if(!s.meds)s.meds=["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"];
-    if(!s.manufacturers)s.manufacturers=["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"];
+    if(!s.meds)s.meds=[...DEFAULT_MEDS];
+    // Einmalige Migration: neues Präparat in bestehende Medikamentenliste einfügen (hinter "Concerta", sonst ans Ende)
+    else if(!s.meds.includes(MPH_NEURAXPHARM)&&!s._mphNpxAdded){
+      const ci=s.meds.indexOf("Concerta");
+      if(ci>=0)s.meds.splice(ci+1,0,MPH_NEURAXPHARM);else s.meds.push(MPH_NEURAXPHARM);
+      s._mphNpxAdded=true;
+    }
+    if(!s.manufacturers)s.manufacturers=["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma","neuraxpharm"];
+    else if(!s.manufacturers.includes("neuraxpharm")&&!s._npxMfrAdded){s.manufacturers.push("neuraxpharm");s._npxMfrAdded=true;}
     if(s.medTherapy===undefined)s.medTherapy=true;
     if(s.inTherapy===undefined)s.inTherapy=false;
     if(s.takesMedication===undefined)s.takesMedication=true;
@@ -531,7 +549,7 @@ function loadSettings(){
     if(s.defaultDosage===undefined)s.defaultDosage="";
     if(s.defaultManufacturer===undefined)s.defaultManufacturer="";
     return s;
-  }catch{return{meds:["Elvanse","Methylphenidat","Ritalin","Concerta","Medikinet","Strattera","Intuniv"],manufacturers:["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma"],medTherapy:true,inTherapy:false,takesMedication:true,koerpergroesse:"",medDurations:{},medDurationsByMfr:{},defaultMed:"Elvanse",defaultDosage:""};}
+  }catch{return{meds:[...DEFAULT_MEDS],manufacturers:["Takeda","Ratiopharm","Hexal","Aliud","1A Pharma","neuraxpharm"],medTherapy:true,inTherapy:false,takesMedication:true,koerpergroesse:"",medDurations:{},medDurationsByMfr:{},defaultMed:"Elvanse",defaultDosage:""};}
 }
 function saveSettings(s){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));}catch{}}
 function getMeds(){return loadSettings().meds;}
@@ -607,17 +625,38 @@ function computeEffectForDoses(doseList){
   for(const p of curve){if(p.s>THR){if(winStart==null)winStart=p.t;winEnd=p.t;}}
   if(winStart==null){winStart=firstT;winEnd=firstT;}
   const maxS=Math.max(...curve.map(p=>p.s),1e-4);
-  // Lokale Maxima (Scheitelpunkte) der Summenkurve: Anstieg→(Plateau)→Abfall; Mini-Buckel <12% des Max. ignorieren
-  const maxima=[];const MINV=Math.max(THR,maxS*0.12);
+  // ── Punkt 3 (erweitert): Lokale Maxima UND Minima der Summenkurve ────────────────────────────
+  // Maxima = Scheitelpunkte (Anstieg→[Plateau]→Abfall); Minima = echte Wirkungstiefen (Abfall→[Plateau]→Anstieg)
+  // zwischen zwei Peaks – z. B. Interdosis-Tal oder Rebound-Delle. Plateau-Rauschen wird herausgefiltert.
+  const rawMax=[],rawMin=[];const MINV=Math.max(THR,maxS*0.12);
   for(let i=1;i<curve.length-1;i++){
-    if(curve[i].s<=curve[i-1].s)continue;
-    let j=i;while(j<curve.length-1&&curve[j+1].s===curve[j].s)j++;
-    if(j<curve.length-1&&curve[j+1].s<curve[j].s){const m=curve[(i+j)>>1];if(m.s>=MINV)maxima.push({t:m.t,v:m.s});i=j;}
+    if(curve[i].s>curve[i-1].s){ // steigend → (Plateau) → fallend == lokales Maximum
+      let j=i;while(j<curve.length-1&&curve[j+1].s===curve[j].s)j++;
+      if(j<curve.length-1&&curve[j+1].s<curve[j].s){const m=curve[(i+j)>>1];if(m.s>=MINV)rawMax.push({t:m.t,v:m.s});i=j;}
+    }else if(curve[i].s<curve[i-1].s){ // fallend → (Plateau) → steigend == lokales Minimum
+      let j=i;while(j<curve.length-1&&curve[j+1].s===curve[j].s)j++;
+      if(j<curve.length-1&&curve[j+1].s>curve[j].s){const m=curve[(i+j)>>1];rawMin.push({t:m.t,v:m.s});i=j;}
+    }
   }
-  const mMerged=[];maxima.forEach(m=>{const p=mMerged[mMerged.length-1];if(p&&m.t-p.t<0.35){if(m.v>p.v)mMerged[mMerged.length-1]=m;}else mMerged.push(m);});
-  if(!mMerged.length&&peak.v>0)mMerged.push({t:peak.t,v:peak.v});
+  // Nahe Maxima auf einem Plateau zusammenfassen (höchsten behalten)
+  let maxima=[];rawMax.forEach(m=>{const p=maxima[maxima.length-1];if(p&&m.t-p.t<0.35){if(m.v>p.v)maxima[maxima.length-1]=m;}else maxima.push(m);});
+  if(!maxima.length&&peak.v>0)maxima.push({t:peak.t,v:peak.v});
+  // Ein Tal zählt nur, wenn beide Nachbar-Peaks deutlich (Prominenz) darüber liegen → kein Plateau-Rauschen.
+  const PROM=Math.max(THR*1.5,maxS*0.08);
+  let minima=rawMin.filter(mn=>{
+    const left=maxima.filter(mx=>mx.t<mn.t).pop(),right=maxima.find(mx=>mx.t>mn.t);
+    if(!left||!right)return false;
+    return (left.v-mn.v)>=PROM&&(right.v-mn.v)>=PROM;
+  });
+  // Nahe Minima zusammenfassen (tiefsten behalten)
+  const mN=[];minima.forEach(m=>{const p=mN[mN.length-1];if(p&&m.t-p.t<0.35){if(m.v<p.v)mN[mN.length-1]=m;}else mN.push(m);});
+  minima=mN;
   const allNonstim=items.every(i=>i.kind==="nonstim");
-  return{curve,items,firstT,lastEnd,peakT:peak.t,peakV:peak.v,winStart,winEnd,maxS,maxima:mMerged,doseCount:doses.length,allNonstim};
+  // ── Punkt 4: Normierung auf 0–10, damit die Wirkkurve direkt mit den 1–10-Symptom-Scores vergleichbar ist.
+  // 10 = individuelles Tages-Maximum dieser Dosis-Konstellation (relativer Vergleichsmaßstab, KEIN Plasmaspiegel).
+  const norm10=s=>+(Math.max(0,Math.min(1,s/maxS))*10).toFixed(2);
+  return{curve,items,firstT,lastEnd,peakT:peak.t,peakV:peak.v,winStart,winEnd,maxS,
+    maxima,minima,norm10,doseCount:doses.length,allNonstim};
 }
 function computeDayEffect(dayOrDate){
   const day=typeof dayOrDate==="string"?S.data[dayOrDate]:dayOrDate;
@@ -1180,7 +1219,7 @@ function buildComboSparkline(de){
     svg+=`<path d="${ln}" fill="none" stroke="#c084fc" stroke-width="2" stroke-linejoin="round"/>`;
   }
   de.items.forEach(i=>{const x=X(i.t0);svg+=`<line x1="${x.toFixed(1)}" y1="${(PAD.t+gH).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(PAD.t+gH+4).toFixed(1)}" stroke="#c084fc" stroke-width="1.5"/><text x="${x.toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="7" fill="#9a7fd0">💊${i.takenAt}</text>`;});
-  // Alle lokalen Wirk-Maxima (Scheitelpunkte) mit Uhrzeit markieren
+  // Alle lokalen Wirk-Maxima (Scheitelpunkte) mit Uhrzeit + normiertem Wert (0–10) markieren
   let lastLx=-999,lane=0;
   (de.maxima&&de.maxima.length?de.maxima:[{t:de.peakT,v:de.peakV}]).forEach(mx=>{
     const px=X(mx.t);
@@ -1189,6 +1228,12 @@ function buildComboSparkline(de){
     lane=(px-lastLx<34)?(lane^1):0;
     svg+=`<text x="${px.toFixed(1)}" y="${lane?9:17}" text-anchor="middle" font-size="7.5" fill="#e9d5ff" font-weight="700">▲${hToHHMM(mx.t)}</text>`;
     lastLx=px;
+  });
+  // Punkt 3: Wirkungsminima (Interdosis-Täler / Rebound-Fenster) markieren
+  (de.minima||[]).forEach(mn=>{
+    const px=X(mn.t),py=Y(mn.v);
+    svg+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.4" fill="none" stroke="#fb923c" stroke-width="1.3"/>`;
+    svg+=`<text x="${px.toFixed(1)}" y="${(py+11).toFixed(1)}" text-anchor="middle" font-size="7.5" fill="#fdba74" font-weight="700">▼${hToHHMM(mn.t)}</text>`;
   });
   return svg+"</svg>";
 }
@@ -1207,6 +1252,8 @@ function buildDayGraph(date,selectedMetrics){
     svg+=`<text x="${PAD.l+3}" y="${PAD.t+9}" font-size="8" fill="#60a5fa">☀️${day.aufgestandenAt}</text>`;
   }
   for(let v=1;v<=5;v++){const y=yOf(v);svg+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="#253050" stroke-width="1"/><text x="${PAD.l-4}" y="${y+4}" text-anchor="end" font-size="9" fill="#5a6890">${v}</text>`;}
+  // Punkt 4: Y-Achse klar beschriften – Skala 1–5 gilt für BEIDE Ebenen (Symptom-Score UND normierte Wirkung)
+  svg+=`<text x="${PAD.l-14}" y="${PAD.t+gH/2}" transform="rotate(-90 ${PAD.l-14} ${PAD.t+gH/2})" text-anchor="middle" font-size="8" fill="#5a6890">Score 1–5 · Wirkung normiert</text>`;
   for(let h=4;h<=24;h+=4){const x=xOf(h);svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#1e2840" stroke-width="1"/><text x="${x}" y="${H-4}" text-anchor="middle" font-size="9" fill="#5a6890">${h}h</text>`;}
   getDayMeds(day).forEach(dose=>{
     if(!dose.takenAt)return;
@@ -1214,10 +1261,12 @@ function buildDayGraph(date,selectedMetrics){
     const x=xOf(hv);
     svg+=`<line x1="${x}" y1="${PAD.t}" x2="${x}" y2="${PAD.t+gH}" stroke="#c084fc" stroke-width="2" stroke-dasharray="4,3"/><text x="${x+3}" y="${PAD.t+22}" font-size="9" fill="#c084fc">💊</text>`;
   });
-  // Punkt 2: kombinierte Wirkkurve (Superposition ALLER Einnahmen) hinter den Metriken + Tages-Peak
+  // Punkt 2 + 4: kombinierte Wirkkurve (Superposition ALLER Einnahmen), normiert auf DIESELBE 1–5-Achse wie die Symptome.
+  //   Wirkung 0 → Achsenboden (Score 1), Tages-Maximum → Score 5. So liegen Symptom-Eingaben und theoretische Wirkung
+  //   im GLEICHEN Koordinatensystem und sind direkt vergleichbar (Punkt-4-Transparenz).
   const de=computeDayEffect(day);
   if(de&&!de.allNonstim){
-    const yEff=s=>PAD.t+gH-Math.max(0,Math.min(1,s/de.maxS))*gH*0.9;
+    const yEff=s=>yOf(1+ (Math.max(0,Math.min(1,s/de.maxS))*4)); // 0..maxS → Score 1..5
     const csx=t=>xOf(Math.max(1,Math.min(24,t)));
     const seg=de.curve.filter(p=>p.t>=1&&p.t<=24.001);
     if(seg.length>1){
@@ -1237,8 +1286,16 @@ function buildDayGraph(date,selectedMetrics){
       svg+=`<line x1="${px.toFixed(1)}" y1="${PAD.t}" x2="${px.toFixed(1)}" y2="${(PAD.t+gH).toFixed(1)}" stroke="#c084fc" stroke-width="1" stroke-dasharray="2,3" opacity="0.85"/>`;
       lrow=(px-lastLx<36)?(lrow^1):0;
       const ly=Math.max(PAD.t+8,yEff(mx.v)-5)-(lrow?10:0);
-      svg+=`<text x="${px.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="8" fill="#e9d5ff" font-weight="700">▲${hToHHMM(mx.t)}</text>`;
+      svg+=`<text x="${px.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="8" fill="#e9d5ff" font-weight="700">▲${hToHHMM(mx.t)}·${de.norm10(mx.v).toFixed(0)}</text>`;
       lastLx=px;
+    });
+    // Punkt 3: Wirkungsminima (Tiefpunkte / Interdosis-Täler / Rebound-Fenster) markieren
+    (de.minima||[]).forEach(mn=>{
+      if(mn.t<1||mn.t>24.4)return;
+      const px=csx(mn.t),py=yEff(mn.v);
+      svg+=`<line x1="${px.toFixed(1)}" y1="${py.toFixed(1)}" x2="${px.toFixed(1)}" y2="${(PAD.t+gH).toFixed(1)}" stroke="#fb923c" stroke-width="1" stroke-dasharray="1,3" opacity="0.7"/>`;
+      svg+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6" fill="none" stroke="#fb923c" stroke-width="1.4"/>`;
+      svg+=`<text x="${px.toFixed(1)}" y="${(py+13).toFixed(1)}" text-anchor="middle" font-size="8" fill="#fdba74" font-weight="700">▼${hToHHMM(mn.t)}</text>`;
     });
   }
   selectedMetrics.forEach(mid=>{
@@ -1259,7 +1316,7 @@ function buildDayGraph(date,selectedMetrics){
 }
 function medAbbr(name){
   if(!name)return'';
-  const M={Elvanse:'ELV',Lisdexamfetamin:'LDX',Methylphenidat:'MPH',Metiphenal:'MTP',Ritalin:'RIT',Concerta:'CON',Medikinet:'MED',Strattera:'STR',Intuniv:'INT'};
+  const M={Elvanse:'ELV',Lisdexamfetamin:'LDX',Methylphenidat:'MPH',[MPH_NEURAXPHARM]:'NPX',Metiphenal:'MTP',Ritalin:'RIT',Concerta:'CON',Medikinet:'MED',Strattera:'STR',Intuniv:'INT'};
   return M[name]||(name||'').slice(0,3).toUpperCase();
 }
 function buildTrendGraph(metricId,days=14){
@@ -2172,7 +2229,10 @@ function renderToday(){
   const date=S.selDate,day=S.data[date]||{},checkins=day.checkins||{};
   const wrap=el("div",{});
   const allDates=buildDateRange().slice().reverse(); // Punkt 4 + 5: lückenlos, neueste links
-  let activePill=null;
+  let activePill=null;const pillByDate={};
+  // Punkt 2: Monat + Jahr des aktuell gewählten Datums, gut sichtbar über der Datumsschiene
+  const capMonth=d=>{const s=new Date(d+"T12:00").toLocaleDateString("de-DE",{month:"long",year:"numeric"});return s.charAt(0).toUpperCase()+s.slice(1);};
+  const monthLabel=el("div",{class:"date-strip-month"},capMonth(S.selDate));
   const strip=el("div",{class:"date-strip"},...allDates.map(d=>{
     const dt=new Date(d+"T12:00");const hasData=hasAnyDayData(d);const isAct=d===S.selDate;
     const pill=el("button",{class:"date-pill"+(isAct?" active":hasData?" has-data":""),onClick:()=>set({selDate:d})},
@@ -2180,9 +2240,16 @@ function renderToday(){
       el("div",{class:"date-pill-day"},String(dt.getDate())),
       hasData?el("div",{class:"date-pill-dot"}):el("div",{style:{height:"7px"}})
     );
+    pillByDate[d]=pill;
     if(isAct)activePill=pill;
     return pill;
   }));
+  // Punkt 2: Beim horizontalen Scrollen den Monatstitel auf den mittig sichtbaren Tag aktualisieren
+  strip.addEventListener("scroll",()=>{
+    const mid=strip.scrollLeft+strip.clientWidth/2;let best=null,bestDx=1e9;
+    for(const d of allDates){const p=pillByDate[d];if(!p)continue;const c=p.offsetLeft+p.offsetWidth/2;const dx=Math.abs(c-mid);if(dx<bestDx){bestDx=dx;best=d;}}
+    if(best){const lbl=capMonth(best);if(monthLabel.textContent!==lbl)monthLabel.textContent=lbl;}
+  },{passive:true});
   // Punkt 3: ausgewähltes (auch historisches) Datum nach dem Rendern horizontal mittig platzieren
   if(activePill)requestAnimationFrame(()=>{
     if(!activePill.isConnected||!strip.isConnected)return;
@@ -2209,7 +2276,7 @@ function renderToday(){
   const topbarRow=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}});
   topbarRow.appendChild(el("div",{class:"topbar-logo"},logoSvg(28),el("h1",{style:{fontSize:"22px"}},date===todayStr()?"Heute":fmtDateS(date))));
   topbarRow.appendChild(el("div",{style:{display:"flex",gap:"8px",alignItems:"center"}},medBtn,el("button",{style:{background:"none",border:"none",color:"var(--muted)",cursor:"pointer",fontSize:"22px",padding:"4px"},onClick:()=>set({showSettings:true})},"⚙️")));
-  wrap.appendChild(el("div",{class:"topbar"},topbarRow,strip));
+  wrap.appendChild(el("div",{class:"topbar"},topbarRow,monthLabel,strip));
   const sec=el("div",{class:"section"});
   if(date===todayStr()){
     sec.appendChild((()=>{
@@ -2279,9 +2346,15 @@ function renderToday(){
       de.doseCount>1?`🔺 Kombinierter Tages-Peak · ${de.doseCount} Einnahmen überlagert`:"🔺 Wirkungshöhepunkt"));
     card.appendChild(el("div",{style:{fontSize:"12px",color:"var(--muted)",lineHeight:"1.5"}},
       `Höchste Gesamtwirkung gegen ${hToHHMM(de.peakT)} Uhr · Gesamtwirkfenster ${hToHHMM(de.winStart)}–${hToHHMM(de.winEnd)}${past?" (bis Folgetag)":""} · ~${totalH.toFixed(1)} h.`));
+    // Punkt 3: Wirkungsminima (Tiefpunkte) als Text ausgeben, falls vorhanden
+    if(de.minima&&de.minima.length){
+      const mn=de.minima.map(m=>`${hToHHMM(m.t)} (~${de.norm10(m.v).toFixed(0)}/10)`).join(", ");
+      card.appendChild(el("div",{style:{fontSize:"11px",color:"var(--orange)",lineHeight:"1.5",marginTop:"2px"}},
+        `▼ Wirkungstief${de.minima.length>1?"s":""} gegen ${mn} – mögliches Rebound-/Durchhänger-Fenster.`));
+    }
     card.appendChild(svgEl(buildComboSparkline(de)));
     card.appendChild(el("div",{style:{fontSize:"10px",color:"var(--muted)",opacity:".72",marginTop:"2px"}},
-      "Relatives PK-Timing-Modell (Überlagerung der Wirkprofile) – keine Plasmaspiegel, keine Dosisempfehlung."));
+      "▲ Peak · ▼ Tief · Werte 0–10 normiert (10 = Tagesmaximum). Relatives PK-Timing-Modell (Überlagerung der Wirkprofile) – keine Plasmaspiegel, keine Dosisempfehlung."));
     sec.appendChild(card);
   })();
   {
@@ -2388,9 +2461,9 @@ function renderStats(){
       const last7=getLast7();
       sec.appendChild(el("div",{class:"card"},
         el("span",{class:"card-label"},`Tagesgraph – ${S.selDate===todayStr()?"Heute":fmtDateS(S.selDate)}`),
-        el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px",lineHeight:"1.6"}},"🔵 Blauer Hintergrund = Schlafphase · 🟣 Fläche = überlagerte Med-Wirkung (Superposition), ▲ = kombinierter Tages-Peak · Uhrzeit: morgens links → abends rechts"),
+        el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px",lineHeight:"1.6"}},"🔵 Blauer Hintergrund = Schlafphase · 🟣 Fläche = überlagerte Med-Wirkung (Superposition), ▲ = Peak, ▼ = Wirkungstief · Symptome (1–5) und normierte Wirkung teilen dieselbe Y-Achse · Uhrzeit: morgens links → abends rechts"),
         (()=>{const g=el("div",{class:"graph-wrap"});g.appendChild(svgEl(buildDayGraph(S.selDate,S.graphMetrics)));return g;})(),
-        el("div",{class:"graph-legend"},...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme")),el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"var(--purple)",opacity:".7"}}),el("span",{},"Wirkung (Σ) · ▲ Peak"))),
+        el("div",{class:"graph-legend"},...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme")),el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"var(--purple)",opacity:".7"}}),el("span",{},"Wirkung (Σ) · ▲ Peak")),el("div",{class:"legend-item"},el("div",{style:{width:"10px",height:"10px",borderRadius:"50%",border:"1.4px solid var(--orange)",display:"inline-block"}}),el("span",{},"▼ Wirkungstief"))),
         el("div",{style:{display:"flex",gap:"6px",marginTop:"10px",overflowX:"auto"}},...last7.map(d=>{const dt=new Date(d+"T12:00");return el("button",{class:"btn sm"+(S.selDate===d?" active":" ghost-sm"),onClick:()=>set({selDate:d})},`${dt.getDate()}.${dt.getMonth()+1}`);}))
       ));
     } else if(S.graphRange==="week"||S.graphRange==="month"){
