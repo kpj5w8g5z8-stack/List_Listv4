@@ -26,6 +26,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Di
 .sub{font-size:13px;color:var(--muted);margin-top:3px;}
 .section{padding:0 16px;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:10px;overflow:hidden;}
+.tagesverlauf-card{background:linear-gradient(165deg,rgba(96,165,250,.14),var(--card) 55%);border:1px solid rgba(96,165,250,.35);box-shadow:0 0 0 1px rgba(96,165,250,.06) inset;}
+.tagesverlauf-label{color:var(--accentL);font-size:12px;font-weight:700;letter-spacing:.04em;}
 .card-label{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px;margin-top:0;}
 .row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;overflow:hidden;}
 .row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;overflow:hidden;}
@@ -303,7 +305,17 @@ const HEALTH_FLAGS=[
   {id:"depression",icon:"🌧️",label:"Depressive Gedanken"},
   {id:"sport",icon:"🏃",label:"Sport gemacht"},
   {id:"nap",icon:"💤",label:"Power Nap / Schläfchen"}, // Punkt 1 (neu): Schläfchen als stündliches Flag
+  {id:"doomscroll",icon:"📱",label:"Viel Social Media / Doomscrolling"},
+  {id:"activebreak",icon:"🚶",label:"Aktive Pause genommen"},
 ];
+const SUPPLEMENTS=[
+  {id:"omega3",icon:"🐟",label:"Omega-3"},
+  {id:"vitd3",icon:"☀️",label:"Vitamin D3"},
+  {id:"eisen",icon:"🔩",label:"Eisen"},
+  {id:"magnesium",icon:"💊",label:"Magnesium"},
+  {id:"zink",icon:"⚙️",label:"Zink"},
+];
+const SUPPLEMENT_TIMING_HINT="💡 Allgemeiner Timing-Hinweis (kein Ersatz für ärztliche Beratung): Omega-3 & Vitamin D3 sind fettlöslich – am besten zu einer fetthaltigen Mahlzeit, zeitlich unabhängig von der ADHS-Medikation. Eisen möglichst mit ≥2 h Abstand zu Kalzium/Milchprodukten, Antazida sowie zur Medikamenteneinnahme einnehmen, da die Aufnahme sonst gehemmt werden kann. Bei Unsicherheit die genaue Einnahmezeit mit Ärztin/Arzt oder Apotheke abstimmen.";
 const IBU_DOSES=[200,400,600,800];
 const MPH_NEURAXPHARM="Methylphenidat-neuraxpharm retard";
 const DEFAULT_MED_DURATIONS={Elvanse:13,Lisdexamfetamin:13,Methylphenidat:8,Metiphenal:8,Ritalin:4,Concerta:12,Medikinet:8,Strattera:24,Intuniv:24,[MPH_NEURAXPHARM]:12};
@@ -711,6 +723,18 @@ function hasDaySleepQuality(date){
   return typeof d.schlafschlecht==="boolean"||Object.keys(getDaySleepTags(date)).length>0||Object.values(d.checkins||{}).some(c=>typeof c.schlafschlecht==="boolean");
 }
 function toggleMedSleepTag(id){const cur=S.medForm.sleepTags||{};S.medForm.sleepTags={...cur,[id]:!cur[id]};render();}
+// ── Punkt 3 (neu): Nahrungsergänzungsmittel im Tagesformular ──
+function toggleSupplement(id){
+  const cur=S.medForm.supplements||{};
+  const on=!cur[id];
+  S.medForm.supplements={...cur,[id]:on};
+  if(on&&!S.medForm.supplementTimes?.[id]){
+    const now=new Date();
+    S.medForm.supplementTimes={...(S.medForm.supplementTimes||{}),[id]:`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`};
+  }
+  render();
+}
+function setSupplementTime(id,val){S.medForm.supplementTimes={...(S.medForm.supplementTimes||{}),[id]:val};}
 // ── Punkt 1 (neu): Power Naps / Schläfchen ──
 // Nap wird als stündliches HEALTH_FLAG erfasst; diese Helfer aggregieren es auf Tagesebene.
 function getNapHours(date){
@@ -793,6 +817,7 @@ function saveMed(){
   day.gewicht=f.gewicht||"";day.gewichtTime=f.gewichtTime||"";
   day.sys=f.sys||"";day.dia=f.dia||"";day.puls=f.puls||"";day.bpTime=f.bpTime||"";
   day.sysPeak=f.sysPeak||"";day.diaPeak=f.diaPeak||"";day.pulsPeak=f.pulsPeak||"";day.bpTimePeak=f.bpTimePeak||"";
+  day.supplements=f.supplements||{};day.supplementTimes=f.supplementTimes||{}; // Punkt 3 (neu)
   syncDayMedMirror(day);
   // Ctx-/Stress-Tags (inkl. 🔥 Hitze / ❄️ Kälte) in dayCtx übernehmen
   const ctxObj={...(day.dayCtx||{}),...(f.ctxTags||{}),...(f.stressTags||{})};
@@ -918,6 +943,42 @@ function hourlyAvg(metricId){
   return HOURS.map(h=>({hour:h,avg:byH[h]?(byH[h].reduce((a,b)=>a+b,0)/byH[h].length):null}));
 }
 function getBestHour(){const ha=hourlyAvg("focus").filter(h=>h.avg);return ha.length?ha.reduce((b,h)=>h.avg>b.avg?h:b,ha[0]):null;}
+// ── Punkt 1 (neu): Optimale Zeitpunkte für Kaffee/Koffein ──
+// Für jede Stunde, zu der historisch Koffein konsumiert wurde: Ø Fokus & Energie in den folgenden 1–3 Stunden.
+function caffeineHourStats(){
+  const stats={};
+  Object.keys(S.data).forEach(date=>{
+    const cks=Object.entries(S.data[date]?.checkins||{}).map(([h,c])=>[+h,c]).sort((a,b)=>a[0]-b[0]);
+    cks.forEach(([h,c])=>{
+      if(!(c.events||[]).some(e=>e.type==="caff"))return;
+      const after=cks.filter(([h2])=>h2>h&&h2<=h+3);
+      const fVals=after.map(([,c2])=>c2.symptoms?.focus).filter(Boolean);
+      const eVals=after.map(([,c2])=>c2.symptoms?.energy).filter(Boolean);
+      const uVals=after.map(([,c2])=>c2.symptoms?.unrest).filter(Boolean); // Innere Unruhe nach Koffein
+      if(!fVals.length&&!eVals.length&&!uVals.length)return;
+      if(!stats[h])stats[h]={fSum:0,fN:0,eSum:0,eN:0,uSum:0,uN:0};
+      if(fVals.length){stats[h].fSum+=avg(fVals);stats[h].fN++;}
+      if(eVals.length){stats[h].eSum+=avg(eVals);stats[h].eN++;}
+      if(uVals.length){stats[h].uSum+=avg(uVals);stats[h].uN++;}
+    });
+  });
+  return Object.entries(stats).map(([h,s])=>({
+    hour:+h,
+    avgFocus:s.fN?s.fSum/s.fN:null,
+    avgEnergy:s.eN?s.eSum/s.eN:null,
+    avgUnrest:s.uN?s.uSum/s.uN:null, // 1–5, hoch = ungünstiger Zeitpunkt
+    n:Math.max(s.fN,s.eN,s.uN),
+  })).sort((a,b)=>a.hour-b.hour);
+}
+const UNREST_HIGH_THRESHOLD=3.4; // ab hier gilt Unruhe nach Koffein als auffällig
+function getBestCaffeineHours(minN=2){
+  return caffeineHourStats().filter(s=>s.n>=minN&&s.avgFocus!=null).sort((a,b)=>{
+    // Zeiten mit hoher innerer Unruhe werden bei gleichem Fokus nach hinten gestuft (ungünstiger Zeitpunkt)
+    const au=a.avgUnrest!=null&&a.avgUnrest>=UNREST_HIGH_THRESHOLD,bu=b.avgUnrest!=null&&b.avgUnrest>=UNREST_HIGH_THRESHOLD;
+    if(au!==bu)return au?1:-1;
+    return b.avgFocus-a.avgFocus;
+  });
+}
 function eventCounts(){
   const counts={};
   allCheckins().forEach(c=>(c.events||[]).forEach(e=>{const k=e.type+":"+e.label;counts[k]=(counts[k]||0)+1;}));
@@ -947,6 +1008,20 @@ function getIbuWeekly(){
     weeks[key]=(weeks[key]||0)+mg;
   });
   return Object.entries(weeks).map(([label,value])=>({label,value}));
+}
+// Punkt 7 (neu): Ibuprofen tagesgenau (statt wochenweise) – damit auf DERSELBEN Zeitachse wie
+// Verdauungsprobleme/Gelenkschmerzen (getSymptomFreq/getJointPainFreq, ebenfalls tagesgenau) darstellbar.
+function getIbuDaily(rangeKey){
+  const now=new Date(),cutoff=new Date(now);
+  if(rangeKey==="week")cutoff.setDate(now.getDate()-7);
+  else if(rangeKey==="month")cutoff.setMonth(now.getMonth()-1);
+  else cutoff.setFullYear(now.getFullYear()-1);
+  const cutStr=cutoff.toISOString().slice(0,10);
+  return Object.keys(S.data).filter(d=>d>=cutStr).sort().map(date=>{
+    let mg=0;
+    Object.values(S.data[date]?.checkins||{}).forEach(c=>{if(c.ibuprofenMg)mg+=c.ibuprofenMg;});
+    return{date,mg};
+  });
 }
 function getSymptomFreq(flagId,rangeKey){
   const now=new Date(),cutoff=new Date(now);
@@ -1122,6 +1197,24 @@ function generateInsights(){
     const aw=wCaff.reduce((a,b)=>a+b,0)/wCaff.length,awo=woCaff.reduce((a,b)=>a+b,0)/woCaff.length;
     const diff=aw-awo;
     if(Math.abs(diff)>0.4)ins.push({type:diff>0?"pos":"warn",icon:"☕",title:diff>0?"Koffein verbessert Fokus":"Koffein könnte stören",text:diff>0?`Mit Koffein Fokus Ø +${diff.toFixed(1)}.`:`Nach Koffein Fokus Ø ${Math.abs(diff).toFixed(1)} niedriger.`});
+  }
+  // ── Punkt 1 (neu): Optimale Kaffee-Zeitpunkte (berücksichtigt auch innere Unruhe) ──
+  {
+    const cst=getBestCaffeineHours(2);
+    if(cst.length>=2){
+      const best=cst[0],worst=cst[cst.length-1];
+      if(best.avgFocus-worst.avgFocus>0.4)ins.push({type:"pos",icon:"☕",
+        title:`Beste Kaffee-Zeit: ~${best.hour}:00 Uhr`,
+        text:`Nach Koffein um ${best.hour}:00 Uhr liegt dein Fokus in den folgenden Stunden Ø bei ${best.avgFocus.toFixed(1)}/5 (n=${best.n})${best.avgUnrest!=null?`, innere Unruhe Ø ${best.avgUnrest.toFixed(1)}/5`:""} – bisher dein bester Zeitpunkt. Um ${worst.hour}:00 Uhr nur Ø ${worst.avgFocus.toFixed(1)}.`});
+    } else if(cst.length===1){
+      ins.push({type:"pos",icon:"☕",title:`Bisheriger Kaffee-Zeitpunkt: ~${cst[0].hour}:00 Uhr`,
+        text:`Nach Koffein um ${cst[0].hour}:00 Uhr Ø Fokus ${cst[0].avgFocus.toFixed(1)}/5 (n=${cst[0].n}). Mehr Daten zu verschiedenen Zeiten liefern eine bessere Empfehlung.`});
+    }
+    // Hohe innere Unruhe nach Koffein deutet auf einen ungünstigen Einnahme-Zeitpunkt hin.
+    const unrestHours=caffeineHourStats().filter(s=>s.n>=2&&s.avgUnrest!=null&&s.avgUnrest>=UNREST_HIGH_THRESHOLD).sort((a,b)=>b.avgUnrest-a.avgUnrest);
+    if(unrestHours.length)ins.push({type:"warn",icon:"⚡",
+      title:`Koffein um ${unrestHours[0].hour}:00 Uhr oft mit innerer Unruhe`,
+      text:`Nach Koffein um ${unrestHours.map(u=>u.hour+":00").join(", ")} Uhr ist die innere Unruhe in den Folgestunden Ø ${unrestHours[0].avgUnrest.toFixed(1)}/5 – ein Hinweis, dass Koffein zu diesem Zeitpunkt nicht gut passt. Ein anderer Zeitpunkt oder weniger Koffein könnten helfen.`});
   }
   const trend=buildTrendData("focus",14).filter(t=>t.avg);
   if(trend.length>=5){
@@ -1454,6 +1547,13 @@ function buildComboSparkline(de){
     svg+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.4" fill="none" stroke="#fb923c" stroke-width="1.3"/>`;
     svg+=`<text x="${px.toFixed(1)}" y="${(py+11).toFixed(1)}" text-anchor="middle" font-size="7.5" fill="#fdba74" font-weight="700">▼${hToHHMM(mn.t)}</text>`;
   });
+  // Punkt 5 (neu): vermutetes Wirkungsende markieren (Ende des Gesamtwirkfensters, winEnd)
+  if(de.winEnd!=null&&de.winEnd<=t1+1e-6){
+    const px=X(de.winEnd);
+    svg+=`<line x1="${px.toFixed(1)}" y1="${PAD.t-2}" x2="${px.toFixed(1)}" y2="${(PAD.t+gH).toFixed(1)}" stroke="#94a8c8" stroke-width="1.2" stroke-dasharray="1,3" opacity="0.85"/>`;
+    svg+=`<circle cx="${px.toFixed(1)}" cy="${(PAD.t+gH).toFixed(1)}" r="2.4" fill="#94a8c8"/>`;
+    svg+=`<text x="${px.toFixed(1)}" y="${PAD.t-4}" text-anchor="middle" font-size="7.5" fill="#94a8c8" font-weight="700">⏹${hToHHMM(de.winEnd)}</text>`;
+  }
   return svg+"</svg>";
 }
 function buildDayGraph(date,selectedMetrics){
@@ -1523,6 +1623,13 @@ function buildDayGraph(date,selectedMetrics){
       svg+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6" fill="none" stroke="#fb923c" stroke-width="1.4"/>`;
       svg+=`<text x="${px.toFixed(1)}" y="${(py+13).toFixed(1)}" text-anchor="middle" font-size="8" fill="#fdba74" font-weight="700">▼${hToHHMM(mn.t)}</text>`;
     });
+    // Punkt 5 (neu): vermutetes Wirkungsende (Ende des Gesamtwirkfensters) markieren
+    if(de.winEnd!=null&&de.winEnd>=1&&de.winEnd<=24.4){
+      const px=csx(de.winEnd);
+      svg+=`<line x1="${px.toFixed(1)}" y1="${PAD.t}" x2="${px.toFixed(1)}" y2="${(PAD.t+gH).toFixed(1)}" stroke="#94a8c8" stroke-width="1" stroke-dasharray="1,3" opacity="0.8"/>`;
+      svg+=`<circle cx="${px.toFixed(1)}" cy="${(PAD.t+gH).toFixed(1)}" r="2.6" fill="#94a8c8"/>`;
+      svg+=`<text x="${px.toFixed(1)}" y="${(PAD.t+gH-6).toFixed(1)}" text-anchor="middle" font-size="8" fill="#94a8c8" font-weight="700">⏹${hToHHMM(de.winEnd)}</text>`;
+    }
   }
   selectedMetrics.forEach(mid=>{
     const m=METRICS.find(x=>x.id===mid);if(!m)return;
@@ -1698,6 +1805,36 @@ function buildBPCompareGraph(rangeKey,pairs,opts){
       if(pts.length>1){let path=`M${xOf(pts[0].i)},${yOf(pts[0].v)}`;for(let k=1;k<pts.length;k++)path+=` L${xOf(pts[k].i)},${yOf(pts[k].v)}`;svg+=`<path d="${path}" fill="none" stroke="${color}" stroke-width="${w}" ${p.dash?`stroke-dasharray="${p.dash}"`:""} stroke-linecap="round" stroke-linejoin="round"/>`;}
       pts.forEach(pt=>{svg+=`<circle cx="${xOf(pt.i)}" cy="${yOf(pt.v)}" r="${p.dash?1.8:2.6}" fill="${color}"/>`;});
     });
+  });
+  return svg+"</svg>";
+}
+// ── Punkt 7 (neu): Ibuprofen, Gelenkschmerzen & Verdauungsprobleme auf DERSELBEN Zeitachse (Tage) ──
+// damit Zusammenhänge (z.B. "Ibuprofen an Tagen mit Gelenkschmerzen") direkt sichtbar werden.
+function buildCorrelationTimelineGraph(dates,ibuByDate,gelenkeByDate,verdauByDate){
+  if(!dates.length)return"";
+  const W=360,ROW_H=34,PAD={t:4,r:10,b:24,l:64};
+  const H=PAD.t+ROW_H*3+PAD.b;
+  const gW=W-PAD.l-PAD.r;
+  const maxIbu=Math.max(...dates.map(d=>ibuByDate[d]||0),1);
+  const step=dates.length>1?gW/dates.length:gW;
+  const bw=Math.max(step-3,3);
+  const rows=[
+    {label:"💊 Ibuprofen",color:"#ff7070",y:PAD.t},
+    {label:"🦵 Gelenke",color:"#fdba74",y:PAD.t+ROW_H},
+    {label:"🪠 Verdauung",color:"#c084fc",y:PAD.t+ROW_H*2},
+  ];
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;overflow:visible;">`;
+  rows.forEach(r=>{
+    svg+=`<text x="4" y="${(r.y+ROW_H/2+3).toFixed(1)}" font-size="9" fill="${r.color}">${r.label}</text>`;
+    svg+=`<line x1="${PAD.l}" y1="${(r.y+ROW_H).toFixed(1)}" x2="${W-PAD.r}" y2="${(r.y+ROW_H).toFixed(1)}" stroke="#1e2840" stroke-width="1"/>`;
+  });
+  dates.forEach((d,i)=>{
+    const x=PAD.l+i*step;
+    const ibu=ibuByDate[d]||0,gel=!!gelenkeByDate[d],ver=!!verdauByDate[d];
+    if(ibu>0){const h=Math.max((ibu/maxIbu)*(ROW_H-8),3);svg+=`<rect x="${(x+1).toFixed(1)}" y="${(rows[0].y+ROW_H-4-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${rows[0].color}" rx="2" opacity="0.85"/>`;}
+    if(gel)svg+=`<circle cx="${(x+bw/2+1).toFixed(1)}" cy="${(rows[1].y+ROW_H/2).toFixed(1)}" r="4" fill="${rows[1].color}"/>`;
+    if(ver)svg+=`<circle cx="${(x+bw/2+1).toFixed(1)}" cy="${(rows[2].y+ROW_H/2).toFixed(1)}" r="4" fill="${rows[2].color}"/>`;
+    if((ibu>0&&(gel||ver))||i===0||i===dates.length-1||dates.length<=8)svg+=`<text x="${(x+bw/2+1).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="6.5" fill="#5a6890" transform="rotate(-35,${(x+bw/2+1).toFixed(1)},${H-4})">${fmtDateXS(d)}</text>`;
   });
   return svg+"</svg>";
 }
@@ -2159,6 +2296,13 @@ function renderCheckin(){
     makeEventSection("pos","✅ Positive Effekte",EV_POS),
     makeEventSection("neg","⚠️ Negative Effekte",EV_NEG),
     makeEventSection("caff","☕ Koffein & Tee",EV_CAFF),
+    (()=>{const best=getBestCaffeineHours(2);if(!best.length)return null;const b=best[0];
+      const unrestWarn=b.avgUnrest!=null&&b.avgUnrest>=UNREST_HIGH_THRESHOLD;
+      return el("div",{class:"peak-hint",style:{marginTop:"-2px",marginBottom:"6px"}},
+        unrestWarn
+          ?`⚡ Bisher beste Fokus-Zeit ~${b.hour}:00 Uhr, ABER auch mit erhöhter innerer Unruhe danach (Ø ${b.avgUnrest.toFixed(1)}/5) – möglicherweise nicht der optimale Zeitpunkt.`
+          :`💡 Bisher beste Fokus-Wirkung nach Koffein: ~${b.hour}:00 Uhr (Ø ${b.avgFocus.toFixed(1)}/5, n=${b.n}).`);
+    })(),
     makeEventSection("food","🍽️ Essen",EV_FOOD),
   ));
   sec.appendChild(el("div",{class:"card"},
@@ -2311,6 +2455,22 @@ function renderMedModal(){
         el("div",{style:{fontSize:"11px",color:"var(--accentL)",marginBottom:"8px"}},"Was hat den Schlaf gestört?"),
         el("div",{class:"ctx-strip",style:{marginBottom:"0"}},...SLEEP_TAGS.map(t=>el("button",{class:"ctx-tag"+(f.sleepTags?.[t.id]?" on":""),onClick:()=>toggleMedSleepTag(t.id)},t.label)))
       ):null,
+      el("span",{class:"card-label",style:{marginTop:"12px"}},"🧪 Nahrungsergänzungsmittel"),
+      el("div",{class:"health-checks"},...SUPPLEMENTS.map(sp=>{
+        const on=!!(f.supplements||{})[sp.id];
+        return el("div",{class:"hcheck"+(on?" on":""),onClick:()=>toggleSupplement(sp.id)},
+          el("div",{class:"hcheck-icon"},sp.icon),el("div",{class:"hcheck-label"},sp.label),el("div",{class:"hcheck-box"},on?"✓":"")
+        );
+      })),
+      Object.keys(f.supplements||{}).some(id=>f.supplements[id])?el("div",{class:"row2",style:{marginTop:"8px"}},
+        ...SUPPLEMENTS.filter(sp=>(f.supplements||{})[sp.id]).map(sp=>{
+          const w=el("div",{class:"vital-field"});const lbl=document.createElement("label");lbl.textContent=`${sp.icon} ${sp.label} – Uhrzeit`;
+          const inp=document.createElement("input");inp.type="time";inp.value=(f.supplementTimes||{})[sp.id]||"";
+          inp.onchange=e=>{setSupplementTime(sp.id,e.target.value);};
+          w.appendChild(lbl);w.appendChild(inp);return w;
+        })
+      ):null,
+      Object.keys(f.supplements||{}).some(id=>f.supplements[id])?el("div",{class:"peak-hint",style:{marginTop:"8px"}},SUPPLEMENT_TIMING_HINT):null,
       el("span",{class:"card-label",style:{marginTop:"12px"}},"⚖️ Gewicht"),
       el("div",{class:"row2"},vInp("Gewicht","number","gewicht","kg"),vInp("Uhrzeit","time","gewichtTime")),
       el("span",{class:"card-label",style:{marginTop:"12px"}},"❤️ Blutdruck"),
@@ -2511,6 +2671,7 @@ function renderToday(){
       aufgestandenAt:day.aufgestandenAt||"",schlafenAt:day.schlafenAt||"",
       gewicht:day.gewicht||"",gewichtTime:day.gewichtTime||"",sys:day.sys||"",dia:day.dia||"",puls:day.puls||"",bpTime:day.bpTime||"",
       sysPeak:day.sysPeak||"",diaPeak:day.diaPeak||"",pulsPeak:day.pulsPeak||"",bpTimePeak:day.bpTimePeak||"",
+      supplements:{...(day.supplements||{})},supplementTimes:{...(day.supplementTimes||{})}, // Punkt 3 (neu)
       ctxTags:existCtx,stressTags:existStress};
     set({showMed:true,medForm:f,medNoteEdit:null});
   }},day.isPauseDay?"⏸ Pause":dayDoses.length?(`💊 ${dayDoses[0].medication} ${dayDoses[0].dosage||""}`.trim()+(dayDoses.length>1?` +${dayDoses.length-1}`:"")):"+ Tagesformular");
@@ -2628,8 +2789,8 @@ function renderToday(){
     if(doseHours.has(h))circle.appendChild(el("span",{class:"med-badge"},"💊"));
     return el("div",{class:"hour-dot",onClick:()=>openCheckin(h)},circle,el("div",{class:"hour-label"},h+"h"));
   })));
-  sec.appendChild(el("div",{class:"card"},
-    el("span",{class:"card-label"},"Tagesverlauf – tippe eine Stunde an"),tl,
+  sec.appendChild(el("div",{class:"card tagesverlauf-card"},
+    el("span",{class:"card-label tagesverlauf-label"},"⏱️ Tagesverlauf – tippe eine Stunde an"),tl,
     el("div",{style:{display:"flex",gap:"14px",marginTop:"10px"}},...[["Ausgefüllt","var(--green)"],["Jetzt","var(--accentL)"],["Leer","var(--dim)"]].map(([l,c])=>el("div",{style:{display:"flex",alignItems:"center",gap:"5px"}},el("div",{style:{width:"8px",height:"8px",borderRadius:"50%",background:c}}),el("span",{style:{fontSize:"10px",color:"var(--muted)"}},l))))
   ));
   // Punkt 4 (neu): kompaktes Tagesprotokoll – alle Stunden- & Medikamenten-Notizen des gewählten Tages als Mini-Timeline
@@ -2708,9 +2869,9 @@ function renderStats(){
       const last7=getLast7();
       sec.appendChild(el("div",{class:"card"},
         el("span",{class:"card-label"},`Tagesgraph – ${S.selDate===todayStr()?"Heute":fmtDateS(S.selDate)}`),
-        el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px",lineHeight:"1.6"}},"🔵 Blauer Hintergrund = Schlafphase · 💤 Cyan-Band = Power Nap · 🟣 Fläche = überlagerte Med-Wirkung (Superposition), ▲ = Peak, ▼ = Wirkungstief · Symptome (1–5) und normierte Wirkung teilen dieselbe Y-Achse · Uhrzeit: morgens links → abends rechts"),
+        el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px",lineHeight:"1.6"}},"🔵 Blauer Hintergrund = Schlafphase · 💤 Cyan-Band = Power Nap · 🟣 Fläche = überlagerte Med-Wirkung (Superposition), ▲ = Peak, ▼ = Wirkungstief, ⏹ = vermutetes Wirkungsende · Symptome (1–5) und normierte Wirkung teilen dieselbe Y-Achse · Uhrzeit: morgens links → abends rechts"),
         (()=>{const g=el("div",{class:"graph-wrap"});g.appendChild(svgEl(buildDayGraph(S.selDate,S.graphMetrics)));return g;})(),
-        el("div",{class:"graph-legend"},...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme")),el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"var(--purple)",opacity:".7"}}),el("span",{},"Wirkung (Σ) · ▲ Peak")),el("div",{class:"legend-item"},el("div",{style:{width:"10px",height:"10px",borderRadius:"50%",border:"1.4px solid var(--orange)",display:"inline-block"}}),el("span",{},"▼ Wirkungstief")),el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"rgba(34,211,238,.45)"}}),el("span",{},"💤 Power Nap"))),
+        el("div",{class:"graph-legend"},...S.graphMetrics.map(mid=>{const m=METRICS.find(x=>x.id===mid);return el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:m.color}}),m.label);}),el("div",{class:"legend-item"},el("div",{style:{width:"18px",height:"3px",borderLeft:"2px dashed var(--purple)",display:"inline-block"}}),el("span",{},"Einnahme")),el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"var(--purple)",opacity:".7"}}),el("span",{},"Wirkung (Σ) · ▲ Peak")),el("div",{class:"legend-item"},el("div",{style:{width:"10px",height:"10px",borderRadius:"50%",border:"1.4px solid var(--orange)",display:"inline-block"}}),el("span",{},"▼ Wirkungstief")),el("div",{class:"legend-item"},el("div",{style:{width:"10px",height:"10px",borderRadius:"50%",background:"var(--muted)",display:"inline-block"}}),el("span",{},"⏹ Wirkungsende")),el("div",{class:"legend-item"},el("div",{class:"legend-line",style:{background:"rgba(34,211,238,.45)"}}),el("span",{},"💤 Power Nap"))),
         el("div",{style:{display:"flex",gap:"6px",marginTop:"10px",overflowX:"auto"}},...last7.map(d=>{const dt=new Date(d+"T12:00");return el("button",{class:"btn sm"+(S.selDate===d?" active":" ghost-sm"),onClick:()=>set({selDate:d})},`${dt.getDate()}.${dt.getMonth()+1}`);}))
       ));
       // Punkt 4 (neu): Tagesprotokoll (Notizbuch) direkt unter dem Tagesgraphen des gewählten Datums
@@ -2769,13 +2930,50 @@ function renderStats(){
       ));
     }
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"❤️ Blutdruck"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Noch keine Blutdruckdaten.")));
+    // Punkt 2 (neu): Schlaf erstreckt sich über zwei Kalendertage (Einschlafen Tag 1 → Aufstehen Tag 2).
+    // Statt "Aufstehen(d) → Schlafen(d)" (irreführend, da beide Werte am selben Datum hängen, aber zu
+    // unterschiedlichen Nächten gehören) zeigen wir explizit die tatsächliche Nacht: Bettzeit vom Vorabend
+    // bis Aufstehen an diesem Tag – inkl. Datumsangabe, damit auch sehr späte Einschlafzeiten (z.B. 02:00) klar sind.
     const slpDays=getBodySeries(S.bodyStatsRange).filter(d=>S.data[d]?.aufgestandenAt||S.data[d]?.schlafenAt);
-    if(slpDays.length){sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"😴 Schlafzeiten"),el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},...slpDays.slice(-10).reverse().map(d=>{const dd=S.data[d];const dur=getSleepDurationForDate(d);return el("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"13px",padding:"6px 0",borderBottom:"1px solid var(--border)"}},el("span",{style:{color:"var(--muted)"}},fmtDateXS(d)),el("span",{},(dd.aufgestandenAt?`☀️ ${dd.aufgestandenAt}`:""),"→",(dd.schlafenAt?`🌙 ${dd.schlafenAt}`:"")),dur?el("span",{style:{color:"var(--accentL)",fontSize:"12px"}},`${dur.toFixed(1)}h`):null);}))));}
+    if(slpDays.length){sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"😴 Schlafzeiten"),
+      el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"8px",lineHeight:"1.5"}},"Jede Nacht = Einschlafen am Vorabend bis Aufstehen am Folgetag (auch bei sehr spätem Einschlafen nach Mitternacht)."),
+      el("div",{style:{display:"flex",flexDirection:"column",gap:"6px"}},...slpDays.slice(-10).reverse().map(d=>{
+        const dd=S.data[d];const prevD=getPrevDate(d);const prev=S.data[prevD];
+        const dur=getSleepDurationForDate(d);
+        // Ermitteln, welche Bettzeit tatsächlich zu dieser Aufwach-Nacht gehört (Vorabend bevorzugt; Fallback = gleicher Tag)
+        let bedDateLabel=null,bedTime=null;
+        if(prev?.schlafenAt&&calcSleepDuration(prev.schlafenAt,dd.aufgestandenAt)!=null){bedDateLabel=fmtDateXS(prevD);bedTime=prev.schlafenAt;}
+        else if(dd.schlafenAt){bedDateLabel=fmtDateXS(d);bedTime=dd.schlafenAt;}
+        const wakeLabel=dd.aufgestandenAt?`${fmtDateXS(d)} ☀️ ${dd.aufgestandenAt}`:null;
+        const bedLabel=bedTime?`${bedDateLabel} 🌙 ${bedTime}`:null;
+        return el("div",{style:{display:"flex",flexDirection:"column",gap:"2px",fontSize:"13px",padding:"6px 0",borderBottom:"1px solid var(--border)"}},
+          el("div",{style:{display:"flex",justifyContent:"space-between"}},
+            el("span",{},bedLabel||"–"," → ",wakeLabel||"–"),
+            dur?el("span",{style:{color:"var(--accentL)",fontSize:"12px"}},`${dur.toFixed(1)}h`):null
+          )
+        );
+      }))));}
   }
 
   if(S.statsTab==="symptoms"){
     const ranges=[["week","7 Tage"],["month","30 Tage"],["year","12 Mo"]];
     sec.appendChild(el("div",{class:"seg"},...ranges.map(([k,l])=>el("button",{class:"seg-btn"+(S.symptomRange===k?" active":""),onClick:()=>set({symptomRange:k})},l))));
+    // Punkt 7 (neu): Ibuprofen, Gelenkschmerzen & Verdauung auf derselben Zeitachse (Korrelationen direkt sichtbar)
+    {
+      const ibuDaily=getIbuDaily(S.symptomRange);
+      const gelDaily=getSymptomFreq("gelenke",S.symptomRange);
+      const verDaily=getSymptomFreq("verdauung",S.symptomRange);
+      const allDates=[...new Set([...ibuDaily.map(d=>d.date),...gelDaily.map(d=>d.date),...verDaily.map(d=>d.date)])].sort();
+      const ibuByDate={};ibuDaily.forEach(d=>{if(d.mg)ibuByDate[d.date]=d.mg;});
+      const gelByDate={};gelDaily.forEach(d=>{if(d.count>0)gelByDate[d.date]=true;});
+      const verByDate={};verDaily.forEach(d=>{if(d.count>0)verByDate[d.date]=true;});
+      const hasAny=Object.keys(ibuByDate).length||Object.keys(gelByDate).length||Object.keys(verByDate).length;
+      if(hasAny)sec.appendChild(el("div",{class:"card"},
+        el("span",{class:"card-label"},"🕒 Ibuprofen, Gelenke & Verdauung – gemeinsame Zeitachse"),
+        el("div",{style:{fontSize:"11px",color:"var(--muted)",marginBottom:"6px"}},"Balken = Ibuprofen-Menge, Punkte = Tag mit Symptom. Direkt untereinander = möglicher Zusammenhang."),
+        svgEl(buildCorrelationTimelineGraph(allDates,ibuByDate,gelByDate,verByDate))
+      ));
+    }
     const ibuData=getIbuWeekly();
     if(ibuData.length>0)sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"💊 Ibuprofen-Konsum (mg / Woche)"),svgEl(buildBarGraph(ibuData.map(i=>({label:i.label,value:i.value})).reverse(),"#ff7070")),el("div",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"6px"}},`Gesamt: ${ibuData.reduce((a,i)=>a+i.value,0)} mg`)));
     else sec.appendChild(el("div",{class:"card"},el("span",{class:"card-label"},"💊 Ibuprofen"),el("div",{style:{color:"var(--muted)",fontSize:"13px"}},"Noch keine Daten.")));
